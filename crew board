@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crew Board</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="https://smtpjs.com/v3/smtp.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #F7F4EC; }
+    .cb-input, .cb-textarea {
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      border: 1px solid #C9C2AC;
+      background: #FFFEFA;
+      color: #1B2A33;
+      border-radius: 3px;
+      padding: 10px 12px;
+      width: 100%;
+      -webkit-appearance: none;
+    }
+    .cb-input:focus, .cb-textarea:focus { outline: 2px solid #1F4E78; outline-offset: 1px; }
+    .cb-btn {
+      font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px;
+      border-radius: 3px; border: 1px solid #1B2A33; background: #1B2A33;
+      color: #F7F4EC; padding: 11px 18px; cursor: pointer; white-space: nowrap;
+    }
+    .cb-btn:hover { background: #2A3F4C; }
+    .cb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .cb-btn-ghost {
+      font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px;
+      background: transparent; color: #1B2A33; border: 1px solid #B9B3A0;
+      border-radius: 3px; padding: 11px 18px; cursor: pointer; white-space: nowrap;
+    }
+    .cb-btn-ghost:hover { background: #EDE9DC; }
+    .cb-btn-danger {
+      font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px;
+      background: transparent; color: #9A3C3C; border: 1px solid #C98787;
+      border-radius: 3px; padding: 11px 18px; cursor: pointer; white-space: nowrap;
+    }
+    .cb-btn-danger:hover { background: #F6E8E8; }
+    .cb-btn-approve {
+      font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px;
+      background: #3E6F5C; color: #fff; border: 1px solid #3E6F5C;
+      border-radius: 3px; padding: 8px 14px; cursor: pointer;
+    }
+    .cb-btn-approve:hover { background: #2E5243; }
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(27,42,51,0.55);
+      display: flex; align-items: flex-start; justify-content: center;
+      z-index: 100; padding: 16px; overflow-y: auto;
+    }
+    .modal-box {
+      background: #FFFEFA; border: 1px solid #D8D2BF; border-radius: 6px;
+      padding: 24px; width: 100%; max-width: 480px; margin: auto;
+    }
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: #1B2A33; color: #F7F4EC; font-family: 'JetBrains Mono', monospace;
+      font-size: 12px; padding: 10px 18px; border-radius: 4px; z-index: 200;
+      white-space: nowrap; animation: fadeIn 0.2s ease;
+    }
+    .toast.error { background: #7A3B3B; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(6px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+    .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px; }
+    @media (min-width: 640px) { .stat-grid { grid-template-columns: repeat(4, 1fr); } }
+    .roster-card {
+      background: #FFFEFA; border: 1px solid #D8D2BF; border-radius: 3px;
+      padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+    }
+    @media (min-width: 700px) {
+      .roster-card { display: grid; grid-template-columns: 1.3fr 1.4fr auto auto; gap: 16px; align-items: center; }
+    }
+    .card-actions { display: flex; gap: 8px; }
+    .card-actions button { flex: 1; }
+    @media (min-width: 700px) { .card-actions button { flex: unset; } }
+    .form-row-2 { display: grid; grid-template-columns: 1fr; gap: 13px; }
+    @media (min-width: 480px) { .form-row-2 { grid-template-columns: 1fr 1fr; } }
+    .search-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+    .search-bar input { flex: 1; min-width: 160px; }
+    .board-header {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      margin-bottom: 20px; border-bottom: 2px solid #1B2A33; padding-bottom: 14px; gap: 12px;
+    }
+    .request-card {
+      background: #FFFEFA; border: 1px solid #D8D2BF; border-left: 4px solid #C9821F;
+      border-radius: 3px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+    }
+    @media (min-width: 600px) { .request-card { flex-direction: row; align-items: center; justify-content: space-between; } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useCallback } = React;
+
+    const SUPABASE_URL = "https://omlgxlecijdvczbnteai.supabase.co";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9tbGd4bGVjaWpkdmN6Ym50ZWFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NDk1NjMsImV4cCI6MjA5ODQyNTU2M30.SODHGjbOaixxfdLIdDMMqSxkdI3GgjK8Tlrz9d8zU6I";
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    function daysUntil(dateStr) {
+      if (!dateStr) return null;
+      const today = new Date(); today.setHours(0,0,0,0);
+      return Math.round((new Date(dateStr + "T00:00:00") - today) / 86400000);
+    }
+
+    function deriveStatus(p) {
+      const onVacation = p.vacation_start && p.vacation_end &&
+        new Date() >= new Date(p.vacation_start + "T00:00:00") &&
+        new Date() <= new Date(p.vacation_end + "T23:59:59");
+      if (onVacation) return "vacation";
+      if (!p.current_project || p.current_project.toLowerCase() === "unassigned") return "available";
+      const du = daysUntil(p.project_end);
+      if (du !== null && du <= 14) return "transitioning";
+      return "active";
+    }
+
+    const STATUS_META = {
+      active:        { label: "On project",  stamp: "ACTIVE",     color: "#3E6F5C", bg: "#E4EEE7", border: "#3E6F5C" },
+      transitioning: { label: "Wrapping up", stamp: "TRANSITION", color: "#A4621A", bg: "#F6E9D6", border: "#C9821F" },
+      available:     { label: "Available",   stamp: "AVAILABLE",  color: "#1F4E78", bg: "#E1E9F0", border: "#2E6394" },
+      vacation:      { label: "On vacation", stamp: "ON LEAVE",   color: "#7A3B3B", bg: "#F2E1E1", border: "#A14E4E" },
+    };
+
+    function fmt(d) {
+      if (!d) return "—";
+      return new Date(d + "T00:00:00").toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
+    }
+
+    function Field({ label, children }) {
+      return (
+        <label style={{ display: "block" }}>
+          <div style={{ fontSize: 11, color: "#7A7461", marginBottom: 5, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.04em" }}>
+            {label.toUpperCase()}
+          </div>
+          {children}
+        </label>
+      );
+    }
+
+    // ── Login Screen ──────────────────────────────────────────────────────────
+    const OWNER_EMAIL = "goldytraju@gmail.com";
+    const GMAIL_USER = "goldytraju@gmail.com";
+    const GMAIL_APP_PASSWORD = "mrnh zicc zlas eklv";
+
+    async function sendEmail(to, subject, html) {
+      try {
+        // Use Supabase edge-compatible SMTP relay via smtp2go free API
+        const body = {
+          api_host: "smtp.gmail.com",
+          api_port: 465,
+          username: GMAIL_USER,
+          password: GMAIL_APP_PASSWORD,
+          to: Array.isArray(to) ? to : [to],
+          from: `Crew Board <${GMAIL_USER}>`,
+          subject,
+          html,
+        };
+        // Since direct SMTP isn't available in browser, use smtp.js (CDN)
+        await window.Email.send({
+          Host: "smtp.gmail.com",
+          Username: GMAIL_USER,
+          Password: GMAIL_APP_PASSWORD,
+          To: to,
+          From: `Crew Board <${GMAIL_USER}>`,
+          Subject: subject,
+          Body: html,
+        });
+      } catch(e) { console.error("Email failed", e); }
+    }
+
+    // ── Login Screen ──────────────────────────────────────────────────────────
+    function LoginScreen({ onSwitchToSignup }) {
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [message, setMessage] = useState(null);
+      const [view, setView] = useState("login");
+
+      async function handleLogin() {
+        setLoading(true); setMessage(null);
+        const { error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) { setMessage({ text: error.message, type: "error" }); setLoading(false); }
+      }
+
+      async function handleForgot() {
+        if (!email) { setMessage({ text: "Enter your email address above first.", type: "error" }); return; }
+        setLoading(true); setMessage(null);
+        const { error } = await sb.auth.resetPasswordForEmail(email, {
+          redirectTo: "https://thomaskanata-crew-board.netlify.app/",
+        });
+        if (error) { setMessage({ text: error.message, type: "error" }); }
+        else { setMessage({ text: "Password reset email sent — check your inbox.", type: "ok" }); setView("login"); }
+        setLoading(false);
+      }
+
+      return (
+        <div style={{
+          minHeight: "100vh", background: "#F7F4EC",
+          backgroundImage: "linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px)",
+          backgroundSize: "28px 28px", display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+        }}>
+          <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 6, padding: 32, width: "100%", maxWidth: 380 }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: "#6B6354", marginBottom: 4 }}>
+              REGISTER — CREW DEPLOYMENT
+            </div>
+            <h1 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 26, textTransform: "uppercase", marginBottom: 24 }}>
+              Crew Board
+            </h1>
+
+            {view === "login" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <Field label="Email">
+                  <input className="cb-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
+                </Field>
+                <Field label="Password">
+                  <input className="cb-input" type="password" value={password} onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••" onKeyDown={e => e.key === "Enter" && handleLogin()} />
+                </Field>
+                {message && (
+                  <div style={{ fontSize: 12, color: message.type === "ok" ? "#3E6F5C" : "#9A3C3C", background: message.type === "ok" ? "#E4EEE7" : "#F6E8E8", padding: "8px 12px", borderRadius: 3 }}>
+                    {message.text}
+                  </div>
+                )}
+                <button className="cb-btn" disabled={!email || !password || loading} onClick={handleLogin}>
+                  {loading ? "Signing in…" : "Sign in"}
+                </button>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+                  <button onClick={() => { setView("forgot"); setMessage(null); }} style={{
+                    background: "none", border: "none", cursor: "pointer", fontSize: 12,
+                    color: "#6B6354", textDecoration: "underline", fontFamily: "'Inter', sans-serif",
+                  }}>Forgot password?</button>
+                  <button onClick={onSwitchToSignup} style={{
+                    background: "none", border: "none", cursor: "pointer", fontSize: 12,
+                    color: "#1F4E78", textDecoration: "underline", fontFamily: "'Inter', sans-serif", fontWeight: 600,
+                  }}>Request access →</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ fontSize: 13, color: "#5A5444", marginBottom: 4 }}>
+                  Enter your email and we will send you a link to reset your password.
+                </div>
+                <Field label="Email">
+                  <input className="cb-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
+                </Field>
+                {message && (
+                  <div style={{ fontSize: 12, color: message.type === "ok" ? "#3E6F5C" : "#9A3C3C", background: message.type === "ok" ? "#E4EEE7" : "#F6E8E8", padding: "8px 12px", borderRadius: 3 }}>
+                    {message.text}
+                  </div>
+                )}
+                <button className="cb-btn" disabled={!email || loading} onClick={handleForgot}>
+                  {loading ? "Sending…" : "Send reset email"}
+                </button>
+                <button onClick={() => { setView("login"); setMessage(null); }} style={{
+                  background: "none", border: "none", cursor: "pointer", fontSize: 12,
+                  color: "#6B6354", textDecoration: "underline", fontFamily: "'Inter', sans-serif", textAlign: "center",
+                }}>← Back to sign in</button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ── Sign Up Screen ────────────────────────────────────────────────────────
+    function SignupScreen({ onSwitchToLogin }) {
+      const [firstName, setFirstName] = useState("");
+      const [lastName, setLastName] = useState("");
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [confirm, setConfirm] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [message, setMessage] = useState(null);
+
+      async function handleSignup() {
+        if (password !== confirm) { setMessage({ text: "Passwords do not match.", type: "error" }); return; }
+        if (password.length < 6) { setMessage({ text: "Password must be at least 6 characters.", type: "error" }); return; }
+        if (!firstName.trim() || !lastName.trim()) { setMessage({ text: "Please enter your full name.", type: "error" }); return; }
+        setLoading(true); setMessage(null);
+        const fullName = `${firstName.trim()} ${lastName.trim()}`;
+        const { data, error } = await sb.auth.signUp({ email, password });
+        if (error) { setMessage({ text: error.message, type: "error" }); setLoading(false); return; }
+        if (data?.user) {
+          await sb.from("user_roles").insert({
+            user_id: data.user.id, email: data.user.email,
+            full_name: fullName, role: "member", status: "pending",
+          });
+          // Notify owner
+          await sendEmail(OWNER_EMAIL, "New Access Request — Crew Board",
+            `<p><strong>${fullName}</strong> (${email}) has requested access to the Crew Board.</p><p><a href="https://thomaskanata-crew-board.netlify.app/">Log in to approve or reject</a></p>`
+          );
+        }
+        setMessage({ text: "Request submitted — an Admin will approve your access shortly.", type: "ok" });
+        setLoading(false);
+      }
+
+      return (
+        <div style={{
+          minHeight: "100vh", background: "#F7F4EC",
+          backgroundImage: "linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px)",
+          backgroundSize: "28px 28px", display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+        }}>
+          <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 6, padding: 32, width: "100%", maxWidth: 420 }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: "#6B6354", marginBottom: 4 }}>
+              REGISTER — CREW DEPLOYMENT
+            </div>
+            <h1 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 26, textTransform: "uppercase", marginBottom: 6 }}>
+              Request Access
+            </h1>
+            <div style={{ fontSize: 13, color: "#6B6354", marginBottom: 20 }}>
+              Fill in your details below. An Admin will review and approve your request.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div className="form-row-2">
+                <Field label="First name">
+                  <input className="cb-input" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="John" />
+                </Field>
+                <Field label="Last name">
+                  <input className="cb-input" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Smith" />
+                </Field>
+              </div>
+              <Field label="Email">
+                <input className="cb-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
+              </Field>
+              <Field label="Password">
+                <input className="cb-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
+              </Field>
+              <Field label="Confirm password">
+                <input className="cb-input" type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
+                  placeholder="••••••••" onKeyDown={e => e.key === "Enter" && handleSignup()} />
+              </Field>
+              {message && (
+                <div style={{ fontSize: 12, color: message.type === "ok" ? "#3E6F5C" : "#9A3C3C", background: message.type === "ok" ? "#E4EEE7" : "#F6E8E8", padding: "10px 12px", borderRadius: 3, lineHeight: 1.5 }}>
+                  {message.text}
+                </div>
+              )}
+              {message?.type !== "ok" ? (
+                <button className="cb-btn" disabled={!firstName || !lastName || !email || !password || !confirm || loading} onClick={handleSignup}>
+                  {loading ? "Submitting…" : "Submit request"}
+                </button>
+              ) : (
+                <button className="cb-btn-ghost" onClick={onSwitchToLogin}>← Back to sign in</button>
+              )}
+              <button onClick={onSwitchToLogin} style={{
+                background: "none", border: "none", cursor: "pointer", fontSize: 12,
+                color: "#6B6354", textDecoration: "underline", fontFamily: "'Inter', sans-serif", textAlign: "center",
+              }}>← Back to sign in</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    // ── Person Form ───────────────────────────────────────────────────────────
+    function PersonForm({ person, onCancel, onSave, saving, isViewer }) {
+      const blank = { name: "", position: "", current_project: "", project_end: "", next_project: "", vacation_start: "", vacation_end: "", comments: "" };
+      const [form, setForm] = useState(person ? { ...blank, ...person } : blank);
+      const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+      return (
+        <div className="modal-box">
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 18, borderBottom: "1px solid #E3DFD1", paddingBottom: 12 }}>
+            {form.id ? (isViewer ? "Request edit" : "Edit entry") : (isViewer ? "Request new person" : "Add person")}
+          </div>
+          {isViewer && (
+            <div style={{ fontSize: 12, background: "#F6E9D6", border: "1px solid #C9821F", borderRadius: 3, padding: "8px 12px", marginBottom: 14, color: "#A4621A" }}>
+              Your changes will be sent to an Admin for approval.
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <Field label="Name">
+              <input className="cb-input" value={form.name} onChange={set("name")} placeholder="Full name" />
+            </Field>
+            <Field label="Position / Role">
+              <input className="cb-input" value={form.position || ""} onChange={set("position")} placeholder="e.g. Lead Pipefitter, Superintendent" />
+            </Field>
+            <div className="form-row-2">
+              <Field label="Current project">
+                <input className="cb-input" value={form.current_project || ""} onChange={set("current_project")} placeholder="e.g. Dry Creek WTP" />
+              </Field>
+              <Field label="Project end date">
+                <input className="cb-input" type="date" value={form.project_end || ""} onChange={set("project_end")} />
+              </Field>
+            </div>
+            <Field label="Next project">
+              <input className="cb-input" value={form.next_project || ""} onChange={set("next_project")} placeholder="e.g. LNG Canada, or TBD" />
+            </Field>
+            <div className="form-row-2">
+              <Field label="Vacation start">
+                <input className="cb-input" type="date" value={form.vacation_start || ""} onChange={set("vacation_start")} />
+              </Field>
+              <Field label="Vacation end">
+                <input className="cb-input" type="date" value={form.vacation_end || ""} onChange={set("vacation_end")} />
+              </Field>
+            </div>
+            <Field label="Comments">
+              <textarea className="cb-textarea" rows={3} value={form.comments || ""} onChange={set("comments")} placeholder="Notes, confirmation status, etc." />
+            </Field>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+            <button className="cb-btn-ghost" onClick={onCancel} disabled={saving}>Cancel</button>
+            <button className="cb-btn" disabled={!form.name.trim() || saving} onClick={() => form.name.trim() && onSave(form)}>
+              {saving ? "Submitting…" : isViewer ? "Submit request" : "Save entry"}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Toast ─────────────────────────────────────────────────────────────────
+    function Toast({ message, type, onDone }) {
+      useEffect(() => { const t = setTimeout(onDone, 2800); return () => clearTimeout(t); }, []);
+      return <div className={`toast${type === "error" ? " error" : ""}`}>{message}</div>;
+    }
+
+    // ── Requests Panel (editor only) ──────────────────────────────────────────
+    const FIELD_LABELS = {
+      name: "Name", position: "Position", current_project: "Current project",
+      project_end: "Project end", next_project: "Next project",
+      vacation_start: "Vacation start", vacation_end: "Vacation end", comments: "Comments",
+    };
+
+    function DiffRow({ label, current, requested }) {
+      const changed = (current || "") !== (requested || "") && requested;
+      return (
+        <div style={{
+          display: "grid", gridTemplateColumns: "100px 1fr 1fr", gap: 8,
+          fontSize: 12, padding: "5px 0", borderBottom: "1px solid #EDE9DC",
+        }}>
+          <div style={{ color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{label}</div>
+          <div style={{ color: "#5A5444" }}>{current || <span style={{ color: "#C9C2AC" }}>—</span>}</div>
+          <div style={{
+            color: changed ? "#A4621A" : "#5A5444",
+            background: changed ? "#FDF3E3" : "transparent",
+            borderRadius: 3, padding: changed ? "1px 6px" : 0,
+            fontWeight: changed ? 600 : 400,
+            border: changed ? "1px solid #C9821F" : "none",
+          }}>
+            {requested || <span style={{ color: "#C9C2AC" }}>—</span>}
+          </div>
+        </div>
+      );
+    }
+
+    function RequestsPanel({ requests, roster, onApprove, onReject }) {
+      if (requests.length === 0) return null;
+      return (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 16, textTransform: "uppercase", marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+            Pending Requests
+            <span style={{ background: "#C9821F", color: "#fff", borderRadius: 99, fontSize: 11, fontFamily: "'Inter', sans-serif", padding: "2px 8px" }}>
+              {requests.length}
+            </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {requests.map(r => {
+              const payload = JSON.parse(r.payload);
+              const current = roster.find(p => p.id === r.roster_id) || {};
+              const fields = ["name","position","current_project","project_end","next_project","vacation_start","vacation_end","comments"];
+              return (
+                <div key={r.id} style={{
+                  background: "#FFFEFA", border: "1px solid #D8D2BF",
+                  borderLeft: "4px solid #C9821F", borderRadius: 3, padding: "14px 16px",
+                }}>
+                  {/* Header */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>
+                        {r.action === "add" ? "➕ Add" : r.action === "edit" ? "✏️ Edit" : "🗑 Remove"} — {payload.name}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#7A7461", marginTop: 2 }}>
+                        Requested by <strong>{r.requester_email}</strong>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="cb-btn-approve" onClick={() => onApprove(r)}>Approve</button>
+                      <button className="cb-btn-danger" style={{ padding: "8px 14px", fontSize: 13 }} onClick={() => onReject(r.id, r)}>Reject</button>
+                    </div>
+                  </div>
+
+                  {/* Remove action */}
+                  {r.action === "remove" && (
+                    <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", padding: "8px 12px", borderRadius: 3 }}>
+                      This request will permanently remove <strong>{payload.name}</strong> from the board.
+                    </div>
+                  )}
+
+                  {/* Add action — just show all fields */}
+                  {r.action === "add" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                      {fields.filter(f => payload[f]).map(f => (
+                        <div key={f} style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: 8, fontSize: 12, padding: "5px 0", borderBottom: "1px solid #EDE9DC" }}>
+                          <div style={{ color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{FIELD_LABELS[f]}</div>
+                          <div style={{ color: "#3E6F5C", fontWeight: 500 }}>{payload[f]}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Edit action — side by side diff */}
+                  {r.action === "edit" && (
+                    <div>
+                      <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 1fr", gap: 8, marginBottom: 4 }}>
+                        <div></div>
+                        <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>CURRENT</div>
+                        <div style={{ fontSize: 11, color: "#A4621A", fontFamily: "'JetBrains Mono', monospace" }}>REQUESTED</div>
+                      </div>
+                      {fields.map(f => {
+                        const cur = current[f] || "";
+                        const req = payload[f] || "";
+                        if (!cur && !req) return null;
+                        return <DiffRow key={f} label={FIELD_LABELS[f]} current={cur} requested={req} />;
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ── Main Board ────────────────────────────────────────────────────────────
+    function CrewBoard({ user, role }) {
+      const isOwner = role === "owner";
+      const isAdmin = role === "admin" || role === "owner";
+      const isEditor = isAdmin; // keep backward compat
+      const [fullName, setFullName] = useState("");
+      const [roster, setRoster] = useState([]);
+      const [requests, setRequests] = useState([]);
+      const [pendingUsers, setPendingUsers] = useState([]);
+      const [allUsers, setAllUsers] = useState([]);
+      const [showUsers, setShowUsers] = useState(false);
+      const [loading, setLoading] = useState(true);
+      const [saving, setSaving] = useState(false);
+      const [query, setQuery] = useState("");
+      const [filter, setFilter] = useState("all");
+      const [positionFilter, setPositionFilter] = useState("all");
+      const [editing, setEditing] = useState(null);
+      const [confirmDelete, setConfirmDelete] = useState(null);
+      const [toast, setToast] = useState(null);
+
+      const notify = (message, type = "ok") => setToast({ message, type });
+
+      const load = useCallback(async () => {
+        const { data } = await sb.from("roster").select("*").order("name");
+        setRoster(data || []);
+        if (!fullName) {
+          const { data: ur } = await sb.from("user_roles").select("full_name").eq("user_id", user.id).single();
+          if (ur?.full_name) setFullName(ur.full_name);
+        }
+        if (isAdmin) {
+          const { data: reqs } = await sb.from("requests").select("*").eq("status", "pending").order("created_at");
+          setRequests(reqs || []);
+          const { data: pending } = await sb.from("user_roles").select("*").eq("status", "pending");
+          setPendingUsers(pending || []);
+          const { data: all } = await sb.from("user_roles").select("*").order("full_name");
+          setAllUsers(all || []);
+        }
+        setLoading(false);
+      }, [isAdmin]);
+
+      useEffect(() => { load(); }, [isAdmin]);
+
+      useEffect(() => {
+        const channel = sb.channel("roster-changes")
+          .on("postgres_changes", { event: "*", schema: "public", table: "roster" }, () => load())
+          .on("postgres_changes", { event: "*", schema: "public", table: "requests" }, () => load())
+          .on("postgres_changes", { event: "*", schema: "public", table: "user_roles" }, () => load())
+          .subscribe();
+        // Polling fallback every 15 seconds in case real-time misses events
+        const poll = setInterval(() => load(), 15000);
+        return () => { sb.removeChannel(channel); clearInterval(poll); };
+      }, [isAdmin]);
+
+      const withStatus = useMemo(() => roster.map(p => ({ ...p, status: deriveStatus(p) })), [roster]);
+
+      const counts = useMemo(() => {
+        const c = { active: 0, transitioning: 0, available: 0, vacation: 0 };
+        withStatus.forEach(p => c[p.status]++);
+        return c;
+      }, [withStatus]);
+
+      const positions = useMemo(() => {
+        const set = new Set(withStatus.map(p => p.position).filter(Boolean));
+        return Array.from(set).sort();
+      }, [withStatus]);
+
+      const filtered = useMemo(() => withStatus
+        .filter(p => filter === "all" ? true : p.status === filter)
+        .filter(p => positionFilter === "all" ? true : (p.position || "") === positionFilter)
+        .filter(p => {
+          const q = query.trim().toLowerCase();
+          if (!q) return true;
+          return p.name.toLowerCase().includes(q) ||
+            (p.current_project || "").toLowerCase().includes(q) ||
+            (p.next_project || "").toLowerCase().includes(q) ||
+            (p.position || "").toLowerCase().includes(q);
+        }), [withStatus, filter, positionFilter, query]);
+
+      // Editor: save directly
+      async function editorSave(form) {
+        setSaving(true);
+        const payload = {
+          name: form.name, position: form.position || null,
+          current_project: form.current_project || null,
+          project_end: form.project_end || null, next_project: form.next_project || null,
+          vacation_start: form.vacation_start || null, vacation_end: form.vacation_end || null,
+          comments: form.comments || null,
+        };
+        let error;
+        if (form.id) ({ error } = await sb.from("roster").update(payload).eq("id", form.id));
+        else ({ error } = await sb.from("roster").insert(payload));
+        setSaving(false);
+        if (error) notify("Save failed: " + error.message, "error");
+        else { setEditing(null); notify(form.id ? "Entry updated" : "Person added"); load(); }
+      }
+
+      // Editor: remove directly
+      async function editorRemove(id) {
+        const { error } = await sb.from("roster").delete().eq("id", id);
+        setConfirmDelete(null);
+        if (error) notify("Remove failed: " + error.message, "error");
+        else { notify("Removed from board"); load(); }
+      }
+
+      // Viewer: submit request
+      async function viewerRequest(form, action) {
+        setSaving(true);
+        const { error } = await sb.from("requests").insert({
+          requester_id: user.id,
+          requester_email: user.email,
+          action,
+          payload: JSON.stringify(form),
+          status: "pending",
+          roster_id: form.id || null,
+        });
+        setSaving(false);
+        if (error) notify("Request failed: " + error.message, "error");
+        else { setEditing(null); setConfirmDelete(null); notify("Request submitted for approval"); }
+      }
+
+      // Editor: approve request
+      async function approveUser(u, newRole) {
+        const { error } = await sb.from("user_roles").update({ status: "approved", role: newRole }).eq("user_id", u.user_id);
+        if (error) { notify("Failed to approve user", "error"); return; }
+        notify(`${u.email} approved as ${newRole === "admin" ? "Admin" : "Member"}`);
+        await sendEmail(u.email, "You have been approved — Crew Board",
+          `<p>Hi ${u.full_name || "there"},</p><p>Your access to the <strong>Crew Board</strong> has been approved. You can now sign in as a <strong>${newRole === "admin" ? "Admin" : "Member"}</strong>.</p><p><a href="https://thomaskanata-crew-board.netlify.app/">Sign in here</a></p>`
+        );
+        load();
+      }
+
+      async function rejectUser(u) {
+        const { error } = await sb.from("user_roles").update({ status: "rejected" }).eq("user_id", u.user_id);
+        if (error) { notify("Failed to reject user", "error"); return; }
+        notify("User rejected");
+        await sendEmail(u.email, "Access Request Update — Crew Board",
+          `<p>Hi ${u.full_name || "there"},</p><p>Unfortunately your request to access the <strong>Crew Board</strong> has not been approved at this time. Please contact your manager for more information.</p>`
+        );
+        load();
+      }
+
+      async function promoteUser(u) {
+        const { error } = await sb.from("user_roles").update({ role: "admin" }).eq("user_id", u.user_id);
+        if (error) notify("Failed to promote user", "error");
+        else { notify(`${u.email} promoted to Admin`); load(); }
+      }
+
+      async function changeUserStatus(u, newStatus, newRole) {
+        const update = { status: newStatus };
+        if (newRole) update.role = newRole;
+        const { error } = await sb.from("user_roles").update(update).eq("user_id", u.user_id);
+        if (error) notify("Failed to update user", "error");
+        else { notify(`${u.full_name || u.email} updated to ${newRole || newStatus}`); load(); }
+      }
+
+      async function notifyRequestResult(req, approved) {
+        const payload = JSON.parse(req.payload);
+        const { data: userRole } = await sb.from("user_roles").select("email, full_name").eq("user_id", req.requester_id).single();
+        if (!userRole) return;
+        const action = req.action === "add" ? "add" : req.action === "edit" ? "edit" : "remove";
+        const actionLabel = action === "add" ? "add a new person" : action === "edit" ? `edit ${payload.name}` : `remove ${payload.name}`;
+        const subject = approved ? `Change Request Approved — Crew Board` : `Change Request Rejected — Crew Board`;
+        const html = approved
+          ? `<p>Hi ${userRole.full_name || "there"},</p><p>Your request to <strong>${actionLabel}</strong> on the Crew Board has been <strong>approved</strong> and applied.</p><p><a href="https://thomaskanata-crew-board.netlify.app/">View the board</a></p>`
+          : `<p>Hi ${userRole.full_name || "there"},</p><p>Your request to <strong>${actionLabel}</strong> on the Crew Board has been <strong>rejected</strong>. Please contact your Admin for more information.</p>`;
+        await sendEmail(userRole.email, subject, html);
+      }
+
+      async function approveRequest(req) {
+        const payload = JSON.parse(req.payload);
+        const data = {
+          name: payload.name,
+          position: payload.position || null,
+          current_project: payload.current_project || null,
+          project_end: payload.project_end || null,
+          next_project: payload.next_project || null,
+          vacation_start: payload.vacation_start || null,
+          vacation_end: payload.vacation_end || null,
+          comments: payload.comments || null,
+        };
+        let error;
+        if (req.action === "add") {
+          ({ error } = await sb.from("roster").insert(data));
+        } else if (req.action === "edit") {
+          if (!req.roster_id) { notify("Approve failed — no roster ID on this request", "error"); return; }
+          ({ error } = await sb.from("roster").update(data).eq("id", req.roster_id));
+        } else if (req.action === "remove") {
+          if (!req.roster_id) { notify("Approve failed — no roster ID on this request", "error"); return; }
+          ({ error } = await sb.from("roster").delete().eq("id", req.roster_id));
+        }
+        if (error) { notify("Approve failed: " + error.message, "error"); return; }
+        await sb.from("requests").update({ status: "approved" }).eq("id", req.id);
+        await notifyRequestResult(req, true);
+        notify("Request approved"); load();
+      }
+
+      async function rejectRequest(id, req) {
+        await sb.from("requests").update({ status: "rejected" }).eq("id", id);
+        if (req) await notifyRequestResult(req, false);
+        notify("Request rejected"); load();
+      }
+
+      async function signOut() {
+        await sb.auth.signOut();
+        window.location.reload();
+      }
+
+      return (
+        <div style={{
+          fontFamily: "'Inter', system-ui, sans-serif",
+          background: "#F7F4EC",
+          backgroundImage: "linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px)",
+          backgroundSize: "28px 28px", color: "#1B2A33", minHeight: "100vh", padding: "24px 16px 80px",
+        }}>
+          <div style={{ maxWidth: 1080, margin: "0 auto" }}>
+
+            {/* Header */}
+            <div className="board-header">
+              <div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: "#6B6354", marginBottom: 4 }}>
+                  REGISTER — CREW DEPLOYMENT
+                </div>
+                <h1 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 26, letterSpacing: "0.02em", margin: 0, textTransform: "uppercase" }}>
+                  Crew Board
+                </h1>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#1B2A33" }}>{fullName || user.email}</div>
+                  <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: isOwner ? "#A4621A" : isAdmin ? "#3E6F5C" : "#1F4E78", fontWeight: 600, marginTop: 2 }}>{isOwner ? "OWNER" : isAdmin ? "ADMIN" : "MEMBER"}</div>
+                </div>
+                <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={signOut}>Sign out</button>
+                {isAdmin && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowUsers(!showUsers)}>
+                  {showUsers ? "Hide users" : "Manage users"}
+                </button>}
+                {isEditor && <button className="cb-btn" onClick={() => setEditing({})}>+ Add</button>}
+                {!isEditor && <button className="cb-btn" onClick={() => setEditing({})}>+ Request</button>}
+              </div>
+            </div>
+
+            {/* Pending users (admin only) */}
+            {isAdmin && pendingUsers.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 16, textTransform: "uppercase", marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+                  Access Requests
+                  <span style={{ background: "#1F4E78", color: "#fff", borderRadius: 99, fontSize: 11, fontFamily: "'Inter', sans-serif", padding: "2px 8px" }}>
+                    {pendingUsers.length}
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {pendingUsers.map(u => (
+                    <div key={u.user_id} style={{
+                      background: "#FFFEFA", border: "1px solid #D8D2BF",
+                      borderLeft: "4px solid #2E6394", borderRadius: 3, padding: "12px 16px",
+                      display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10,
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{u.email}</div>
+                        <div style={{ fontSize: 12, color: "#8A8270", marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>Requesting access</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button className="cb-btn-approve" onClick={() => approveUser(u, "member")}>Approve as Member</button>
+                        {isOwner && (
+                          <button className="cb-btn" style={{ background: "#1F4E78", borderColor: "#1F4E78", fontSize: 13, padding: "8px 14px" }}
+                            onClick={() => approveUser(u, "admin")}>Approve as Admin</button>
+                        )}
+                        <button className="cb-btn-danger" style={{ padding: "8px 14px", fontSize: 13 }} onClick={() => rejectUser(u)}>Reject</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pending requests (admin only) */}
+            {isAdmin && <RequestsPanel requests={requests} roster={roster} onApprove={approveRequest} onReject={rejectRequest} />}
+
+            {/* Users management panel */}
+            {isAdmin && showUsers && (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 16, textTransform: "uppercase", marginBottom: 10 }}>
+                  All Users
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {allUsers.map(u => (
+                    <div key={u.user_id} style={{
+                      background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3,
+                      padding: "12px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10,
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{u.full_name || u.email}</div>
+                        <div style={{ fontSize: 12, color: "#8A8270", marginTop: 2 }}>{u.email}</div>
+                        <div style={{ fontSize: 11, marginTop: 3, fontFamily: "'JetBrains Mono', monospace",
+                          color: u.status === "approved" ? "#3E6F5C" : u.status === "rejected" ? "#9A3C3C" : "#A4621A" }}>
+                          {u.role?.toUpperCase()} — {u.status?.toUpperCase()}
+                        </div>
+                      </div>
+                      {u.user_id !== user.id && (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {u.status !== "approved" && (
+                            <button className="cb-btn-approve" style={{ fontSize: 12, padding: "7px 12px" }}
+                              onClick={() => changeUserStatus(u, "approved", u.role || "member")}>Approve</button>
+                          )}
+                          {u.status === "approved" && u.role !== "admin" && isOwner && (
+                            <button className="cb-btn" style={{ fontSize: 12, padding: "7px 12px", background: "#1F4E78", borderColor: "#1F4E78" }}
+                              onClick={() => changeUserStatus(u, "approved", "admin")}>Make Admin</button>
+                          )}
+                          {u.status === "approved" && u.role === "admin" && isOwner && (
+                            <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }}
+                              onClick={() => changeUserStatus(u, "approved", "member")}>Demote to Member</button>
+                          )}
+                          {u.status !== "rejected" && (
+                            <button className="cb-btn-danger" style={{ fontSize: 12, padding: "7px 12px" }}
+                              onClick={() => changeUserStatus(u, "rejected", u.role)}>Revoke access</button>
+                          )}
+                        </div>
+                      )}
+                      {u.user_id === user.id && (
+                        <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>YOU</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Stat counters */}
+            <div className="stat-grid">
+              {[
+                { key: "active", label: "On project" },
+                { key: "transitioning", label: "Wrapping up" },
+                { key: "available", label: "Available" },
+                { key: "vacation", label: "On vacation" },
+              ].map(s => {
+                const meta = STATUS_META[s.key];
+                const isActive = filter === s.key;
+                return (
+                  <button key={s.key} onClick={() => setFilter(isActive ? "all" : s.key)} style={{
+                    textAlign: "left", cursor: "pointer",
+                    background: isActive ? meta.bg : "#FFFEFA",
+                    border: `1px solid ${isActive ? meta.border : "#D8D2BF"}`,
+                    borderLeft: `4px solid ${meta.border}`, borderRadius: 3, padding: "12px 14px",
+                  }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 600, color: meta.color }}>
+                      {String(counts[s.key]).padStart(2, "0")}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#5A5444", marginTop: 2 }}>{s.label}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Position filter */}
+            {positions.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 7 }}>
+                  FILTER BY POSITION
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <button
+                    onClick={() => setPositionFilter("all")}
+                    style={{
+                      fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500,
+                      padding: "5px 12px", borderRadius: 99, cursor: "pointer",
+                      background: positionFilter === "all" ? "#1B2A33" : "#FFFEFA",
+                      color: positionFilter === "all" ? "#F7F4EC" : "#5A5444",
+                      border: positionFilter === "all" ? "1px solid #1B2A33" : "1px solid #C9C2AC",
+                    }}>
+                    All
+                  </button>
+                  {positions.map(pos => (
+                    <button
+                      key={pos}
+                      onClick={() => setPositionFilter(positionFilter === pos ? "all" : pos)}
+                      style={{
+                        fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500,
+                        padding: "5px 12px", borderRadius: 99, cursor: "pointer",
+                        background: positionFilter === pos ? "#1F4E78" : "#FFFEFA",
+                        color: positionFilter === pos ? "#F7F4EC" : "#5A5444",
+                        border: positionFilter === pos ? "1px solid #1F4E78" : "1px solid #C9C2AC",
+                      }}>
+                      {pos}
+                      <span style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}>
+                        {withStatus.filter(p => p.position === pos).length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Search */}
+            <div className="search-bar">
+              <input className="cb-input" placeholder="Search name, project or position" value={query} onChange={e => setQuery(e.target.value)} />
+              {(filter !== "all" || positionFilter !== "all") && (
+                <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setFilter("all"); setPositionFilter("all"); }}>Clear ×</button>
+              )}
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8A8270", marginLeft: "auto" }}>
+                {loading ? "Loading…" : `${filtered.length} / ${roster.length}`}
+              </span>
+            </div>
+
+            {/* Roster */}
+            {loading ? (
+              <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
+                Connecting to database…
+              </div>
+            ) : filtered.length === 0 ? (
+              <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270" }}>
+                {roster.length === 0 ? "No crew yet — add your first person." : "No one matches this filter."}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {filtered.map(p => {
+                  const meta = STATUS_META[p.status];
+                  const du = daysUntil(p.project_end);
+                  return (
+                    <div key={p.id} className="roster-card" style={{ borderLeft: `4px solid ${meta.border}` }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          <span style={{ fontWeight: 600, fontSize: 15 }}>{p.name}</span>
+                          <span style={{
+                            transform: "rotate(-2deg)", display: "inline-block",
+                            border: `1.5px solid ${meta.border}`, color: meta.color,
+                            fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 10,
+                            letterSpacing: "0.07em", padding: "2px 8px", borderRadius: 3, background: meta.bg,
+                          }}>{meta.stamp}</span>
+                        </div>
+                        {p.position && <div style={{ fontSize: 12, color: "#1F4E78", marginTop: 2, fontWeight: 500 }}>{p.position}</div>}
+                        {p.comments && <div style={{ fontSize: 12, color: "#7A7461", marginTop: 4, lineHeight: 1.4 }}>{p.comments}</div>}
+                      </div>
+                      <div style={{ fontSize: 13 }}>
+                        <div>
+                          <span style={{ color: "#8A8270" }}>Current: </span>{p.current_project || "—"}
+                          {p.project_end && (
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8A8270" }}>
+                              {" "}→ {fmt(p.project_end)}{du !== null ? ` (${du >= 0 ? du + "d" : "ended"})` : ""}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ marginTop: 3 }}><span style={{ color: "#8A8270" }}>Next: </span>{p.next_project || "—"}</div>
+                        {p.vacation_start && p.vacation_end && (
+                          <div style={{ marginTop: 3, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#7A3B3B" }}>
+                            Vacation {fmt(p.vacation_start)} – {fmt(p.vacation_end)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="card-actions">
+                        <button className="cb-btn-ghost" style={{ padding: "9px 12px", fontSize: 13 }}
+                          onClick={() => setEditing(p)}>
+                          {isEditor ? "Edit" : "Request edit"}
+                        </button>
+                        {isEditor && (
+                          <button className="cb-btn-danger" style={{ padding: "9px 12px", fontSize: 13 }}
+                            onClick={() => setConfirmDelete(p)}>Remove</button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={{ marginTop: 32, fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace" }}>
+              Live — changes appear for everyone instantly. Status updates from dates automatically.
+            </div>
+          </div>
+
+          {/* Edit / Add modal */}
+          {editing !== null && (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && !saving && setEditing(null)}>
+              <PersonForm
+                person={editing}
+                onCancel={() => setEditing(null)}
+                onSave={form => isEditor ? editorSave(form) : viewerRequest(form, form.id ? "edit" : "add")}
+                saving={saving}
+                isViewer={!isEditor}
+              />
+            </div>
+          )}
+
+          {/* Confirm delete */}
+          {confirmDelete && (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setConfirmDelete(null)}>
+              <div className="modal-box" style={{ maxWidth: 360 }}>
+                <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>
+                  {isEditor ? `Remove ${confirmDelete.name}?` : `Request removal of ${confirmDelete.name}?`}
+                </div>
+                <div style={{ fontSize: 13, color: "#6B6354", marginBottom: 20 }}>
+                  {isEditor ? "This removes them from the shared board for everyone." : "This will be sent to an editor for approval."}
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button className="cb-btn-ghost" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                  <button className="cb-btn-danger"
+                    onClick={() => isEditor ? editorRemove(confirmDelete.id) : viewerRequest(confirmDelete, "remove")}>
+                    {isEditor ? "Remove" : "Submit request"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
+        </div>
+      );
+    }
+
+    // ── App Root ──────────────────────────────────────────────────────────────
+    function ResetPasswordScreen() {
+      const [password, setPassword] = useState("");
+      const [confirm, setConfirm] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [message, setMessage] = useState(null);
+
+      async function handleReset() {
+        if (password !== confirm) { setMessage({ text: "Passwords do not match.", type: "error" }); return; }
+        if (password.length < 6) { setMessage({ text: "Password must be at least 6 characters.", type: "error" }); return; }
+        setLoading(true);
+        const { error } = await sb.auth.updateUser({ password });
+        if (error) { setMessage({ text: error.message, type: "error" }); setLoading(false); }
+        else {
+          setMessage({ text: "Password updated! Signing you in…", type: "ok" });
+          setLoading(false);
+          setTimeout(() => window.location.reload(), 1200);
+        }
+      }
+
+      return (
+        <div style={{
+          minHeight: "100vh", background: "#F7F4EC",
+          backgroundImage: "linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px)",
+          backgroundSize: "28px 28px", display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+        }}>
+          <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 6, padding: 32, width: "100%", maxWidth: 380 }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: "#6B6354", marginBottom: 4 }}>
+              REGISTER — CREW DEPLOYMENT
+            </div>
+            <h1 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 26, textTransform: "uppercase", marginBottom: 8 }}>
+              Crew Board
+            </h1>
+            <div style={{ fontSize: 13, color: "#5A5444", marginBottom: 20 }}>Set your new password below.</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <Field label="New password">
+                <input className="cb-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
+              </Field>
+              <Field label="Confirm password">
+                <input className="cb-input" type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
+                  placeholder="••••••••" onKeyDown={e => e.key === "Enter" && handleReset()} />
+              </Field>
+              {message && (
+                <div style={{ fontSize: 12, color: message.type === "ok" ? "#3E6F5C" : "#9A3C3C", background: message.type === "ok" ? "#E4EEE7" : "#F6E8E8", padding: "8px 12px", borderRadius: 3 }}>
+                  {message.text}
+                </div>
+              )}
+              <button className="cb-btn" disabled={!password || !confirm || loading} onClick={handleReset}>
+                {loading ? "Updating…" : "Set new password"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Rejected Screen ───────────────────────────────────────────────────────
+    function RejectedScreen({ email }) {
+      async function signOut() { await sb.auth.signOut(); window.location.reload(); }
+      return (
+        <div style={{
+          minHeight: "100vh", background: "#F7F4EC",
+          backgroundImage: "linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px)",
+          backgroundSize: "28px 28px", display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+        }}>
+          <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 6, padding: 32, width: "100%", maxWidth: 400, textAlign: "center" }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 22, textTransform: "uppercase", marginBottom: 12 }}>
+              Crew Board
+            </div>
+            <div style={{ width: 48, height: 48, borderRadius: 99, background: "#F2E1E1", border: "2px solid #A14E4E", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22 }}>
+              ✕
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>Access not approved</div>
+            <div style={{ fontSize: 13, color: "#6B6354", lineHeight: 1.6, marginBottom: 20 }}>
+              Your request for access with <strong>{email}</strong> was not approved. Please contact your manager for more information.
+            </div>
+            <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 20px" }} onClick={signOut}>Sign out</button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Pending Screen ────────────────────────────────────────────────────────
+    function PendingScreen({ email }) {
+      async function signOut() { await sb.auth.signOut(); window.location.reload(); }
+      return (
+        <div style={{
+          minHeight: "100vh", background: "#F7F4EC",
+          backgroundImage: "linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px)",
+          backgroundSize: "28px 28px", display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+        }}>
+          <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 6, padding: 32, width: "100%", maxWidth: 400, textAlign: "center" }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 22, textTransform: "uppercase", marginBottom: 12 }}>
+              Crew Board
+            </div>
+            <div style={{ width: 48, height: 48, borderRadius: 99, background: "#F6E9D6", border: "2px solid #C9821F", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22 }}>
+              ⏳
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>Awaiting approval</div>
+            <div style={{ fontSize: 13, color: "#6B6354", lineHeight: 1.6, marginBottom: 20 }}>
+              Your request for access has been submitted for <strong>{email}</strong>. An Admin will approve your account shortly.
+            </div>
+            <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 20px" }} onClick={signOut}>Sign out</button>
+          </div>
+        </div>
+      );
+    }
+
+        function App() {
+      const [session, setSession] = useState(null);
+      const [role, setRole] = useState(null);
+      const [checking, setChecking] = useState(true);
+      const [isResetting, setIsResetting] = useState(false);
+      const [authView, setAuthView] = useState("login");
+
+      useEffect(() => {
+        // Detect password recovery event from reset email link
+        sb.auth.onAuthStateChange((event, session) => {
+          if (event === "PASSWORD_RECOVERY") {
+            setIsResetting(true);
+            setChecking(false);
+            return;
+          }
+          setSession(session);
+          if (session) fetchRole(session.user.id);
+          else { setRole(null); setChecking(false); }
+        });
+
+        sb.auth.getSession().then(({ data: { session } }) => {
+          setSession(session);
+          if (session) fetchRole(session.user.id);
+          else setChecking(false);
+        });
+      }, []);
+
+      async function fetchRole(uid) {
+        const { data } = await sb.from("user_roles").select("role, status").eq("user_id", uid).single();
+        if (!data) { setRole("pending"); }
+        else if (data.status === "pending") { setRole("pending"); }
+        else if (data.status === "rejected") { setRole("rejected"); }
+        else { setRole(data.role || "member"); }
+        setChecking(false);
+      }
+
+      if (checking) return (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#8A8270" }}>
+          Loading…
+        </div>
+      );
+
+      if (isResetting) return <ResetPasswordScreen />;
+      if (!session) {
+        if (authView === "signup") return <SignupScreen onSwitchToLogin={() => setAuthView("login")} />;
+        return <LoginScreen onSwitchToSignup={() => setAuthView("signup")} />;
+      }
+      if (role === "pending") return <PendingScreen email={session.user.email} />;
+      if (role === "rejected") return <RejectedScreen email={session.user.email} />;
+      return <CrewBoard user={session.user} role={role} />;
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
