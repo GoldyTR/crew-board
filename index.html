@@ -134,6 +134,45 @@
       return new Date(d + "T00:00:00").toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
     }
 
+    function PasswordField({ label, value, onChange, placeholder, onKeyDown }) {
+      const [show, setShow] = React.useState(false);
+      const [capsOn, setCapsOn] = React.useState(false);
+      return (
+        <label style={{ display: "block" }}>
+          <div style={{ fontSize: 11, color: "#7A7461", marginBottom: 5, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.04em" }}>
+            {label.toUpperCase()}
+          </div>
+          <div style={{ position: "relative" }}>
+            <input
+              className="cb-input"
+              type={show ? "text" : "password"}
+              value={value}
+              onChange={onChange}
+              placeholder={placeholder || "••••••••"}
+              onKeyDown={onKeyDown}
+              onKeyUp={e => setCapsOn(e.getModifierState("CapsLock"))}
+              onFocus={e => setCapsOn(e.getModifierState("CapsLock"))}
+              style={{ paddingRight: 40 }}
+            />
+            <button
+              type="button"
+              onClick={() => setShow(!show)}
+              style={{
+                position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "#8A8270", padding: 0,
+              }}>
+              {show ? "🙈" : "👁"}
+            </button>
+          </div>
+          {capsOn && (
+            <div style={{ fontSize: 11, color: "#A4621A", marginTop: 4, fontFamily: "'Inter', sans-serif" }}>
+              ⚠ Caps Lock is on
+            </div>
+          )}
+        </label>
+      );
+    }
+
     function Field({ label, children }) {
       return (
         <label style={{ display: "block" }}>
@@ -220,10 +259,8 @@
                 <Field label="Email">
                   <input className="cb-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
                 </Field>
-                <Field label="Password">
-                  <input className="cb-input" type="password" value={password} onChange={e => setPassword(e.target.value)}
-                    placeholder="••••••••" onKeyDown={e => e.key === "Enter" && handleLogin()} />
-                </Field>
+                <PasswordField label="Password" value={password} onChange={e => setPassword(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleLogin()} />
                 {message && (
                   <div style={{ fontSize: 12, color: message.type === "ok" ? "#3E6F5C" : "#9A3C3C", background: message.type === "ok" ? "#E4EEE7" : "#F6E8E8", padding: "8px 12px", borderRadius: 3 }}>
                     {message.text}
@@ -330,13 +367,9 @@
               <Field label="Email">
                 <input className="cb-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
               </Field>
-              <Field label="Password">
-                <input className="cb-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
-              </Field>
-              <Field label="Confirm password">
-                <input className="cb-input" type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
-                  placeholder="••••••••" onKeyDown={e => e.key === "Enter" && handleSignup()} />
-              </Field>
+              <PasswordField label="Password" value={password} onChange={e => setPassword(e.target.value)} />
+              <PasswordField label="Confirm password" value={confirm} onChange={e => setConfirm(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSignup()} />
               {message && (
                 <div style={{ fontSize: 12, color: message.type === "ok" ? "#3E6F5C" : "#9A3C3C", background: message.type === "ok" ? "#E4EEE7" : "#F6E8E8", padding: "10px 12px", borderRadius: 3, lineHeight: 1.5 }}>
                   {message.text}
@@ -812,7 +845,7 @@
                   All Users
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {allUsers.map(u => (
+                  {allUsers.filter(u => isOwner || !u.role?.startsWith("hidden_")).map(u => (
                     <div key={u.user_id} style={{
                       background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3,
                       padding: "12px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10,
@@ -825,7 +858,10 @@
                           {u.role?.toUpperCase()} — {u.status?.toUpperCase()}
                         </div>
                       </div>
-                      {u.user_id !== user.id && (
+                      {u.user_id === user.id && (
+                        <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>YOU</div>
+                      )}
+                      {u.user_id !== user.id && u.role !== "owner" && (
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           {u.status !== "approved" && (
                             <button className="cb-btn-approve" style={{ fontSize: 12, padding: "7px 12px" }}
@@ -843,10 +879,16 @@
                             <button className="cb-btn-danger" style={{ fontSize: 12, padding: "7px 12px" }}
                               onClick={() => changeUserStatus(u, "rejected", u.role)}>Revoke access</button>
                           )}
+                          {isOwner && (
+                            <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }}
+                              onClick={() => changeUserStatus(u, u.status, u.role === "hidden_member" ? "member" : "hidden_" + u.role)}>
+                              {u.role?.startsWith("hidden_") ? "Unhide" : "Hide from Admins"}
+                            </button>
+                          )}
                         </div>
                       )}
-                      {u.user_id === user.id && (
-                        <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>YOU</div>
+                      {u.user_id !== user.id && u.role === "owner" && (
+                        <div style={{ fontSize: 11, color: "#A4621A", fontFamily: "'JetBrains Mono', monospace" }}>OWNER — PROTECTED</div>
                       )}
                     </div>
                   ))}
@@ -1070,13 +1112,9 @@
             </h1>
             <div style={{ fontSize: 13, color: "#5A5444", marginBottom: 20 }}>Set your new password below.</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <Field label="New password">
-                <input className="cb-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
-              </Field>
-              <Field label="Confirm password">
-                <input className="cb-input" type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
-                  placeholder="••••••••" onKeyDown={e => e.key === "Enter" && handleReset()} />
-              </Field>
+              <PasswordField label="New password" value={password} onChange={e => setPassword(e.target.value)} />
+              <PasswordField label="Confirm password" value={confirm} onChange={e => setConfirm(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleReset()} />
               {message && (
                 <div style={{ fontSize: 12, color: message.type === "ok" ? "#3E6F5C" : "#9A3C3C", background: message.type === "ok" ? "#E4EEE7" : "#F6E8E8", padding: "8px 12px", borderRadius: 3 }}>
                   {message.text}
@@ -1175,6 +1213,7 @@
         if (!data) { setRole("pending"); }
         else if (data.status === "pending") { setRole("pending"); }
         else if (data.status === "rejected") { setRole("rejected"); }
+        else if (data.role?.startsWith("hidden_")) { setRole(data.role.replace("hidden_", "")); }
         else { setRole(data.role || "member"); }
         setChecking(false);
       }
