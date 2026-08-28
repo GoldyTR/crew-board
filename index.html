@@ -58,7 +58,7 @@
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
       background: #1B2A33; color: #F7F4EC; font-family: 'JetBrains Mono', monospace;
       font-size: 12px; padding: 10px 18px; border-radius: 4px; z-index: 200;
-      white-space: nowrap; animation: fadeIn 0.2s ease;
+      max-width: 90vw; text-align: center; animation: fadeIn 0.2s ease;
     }
     .toast.error { background: #7A3B3B; }
     @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(6px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
@@ -92,6 +92,10 @@
       border: 1px solid #D8D2BF; border-top: none; border-left: 4px solid #C9821F;
       border-radius: 0 0 3px 3px; background: #FFFEFA; padding: 14px 16px;
     }
+    .note-bar {
+      font-size: 12px; color: #6B6354; background: #EFEBDD; border: 1px solid #D8D2BF;
+      border-radius: 3px; padding: "8px 12px"; padding: 8px 12px; margin-bottom: 10px;
+    }
   </style>
 </head>
 <body>
@@ -102,6 +106,12 @@
     const SUPABASE_URL = "https://omlgxlecijdvczbnteai.supabase.co";
     const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9tbGd4bGVjaWpkdmN6Ym50ZWFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NDk1NjMsImV4cCI6MjA5ODQyNTU2M30.SODHGjbOaixxfdLIdDMMqSxkdI3GgjK8Tlrz9d8zU6I";
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    // Roles that count as board managers. Kept in one place so the UI and the
+    // database RLS policies stay in agreement.
+    const MANAGER_ROLES = ["admin", "owner", "hidden_admin", "hidden_owner"];
+    const isManagerRole = (r) => MANAGER_ROLES.includes(r);
+    const isOwnerRole = (r) => r === "owner" || r === "hidden_owner";
 
     function daysUntil(dateStr) {
       if (!dateStr) return null;
@@ -168,6 +178,11 @@
     }
 
     const OWNER_EMAIL = "goldytraju@gmail.com";
+
+    // NOTE: this is a stub. Browser-side code cannot send mail. Wiring this up
+    // requires a Supabase Edge Function with a mail provider key. Until then,
+    // no access-request or approval notifications are actually delivered.
+    // (Supabase Auth password-reset mail is separate and does work.)
     async function sendEmail(to, subject, html) {
       console.log("Email notification (not sent — server-side function needed):", { to, subject });
     }
@@ -246,7 +261,16 @@
         const { data, error } = await sb.auth.signUp({ email, password });
         if (error) { setMessage({ text: error.message, type: "error" }); setLoading(false); return; }
         if (data?.user) {
-          await sb.from("user_roles").insert({ user_id: data.user.id, email: data.user.email, full_name: fullName, role: "member", status: "pending" });
+          // role and status are also pinned by the database insert policy —
+          // these values must stay 'member' / 'pending' or the insert is rejected.
+          const { error: roleErr } = await sb.from("user_roles").insert({
+            user_id: data.user.id, email: data.user.email, full_name: fullName,
+            role: "member", status: "pending",
+          });
+          if (roleErr) {
+            setMessage({ text: "Account created, but the access request failed to register: " + roleErr.message + " — please contact your manager.", type: "error" });
+            setLoading(false); return;
+          }
           await sendEmail(OWNER_EMAIL, "New Access Request — Crew Board", `<p><strong>${fullName}</strong> (${email}) has requested access to the Crew Board.</p><p><a href="https://goldytr.github.io/crew-board/">Log in to approve or reject</a></p>`);
         }
         setMessage({ text: "Request submitted — an Admin will approve your access shortly.", type: "ok" });
@@ -269,11 +293,13 @@
               <PasswordField label="Confirm password" value={confirm} onChange={e => setConfirm(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSignup()} />
               {message && <div style={{ fontSize: 12, color: message.type === "ok" ? "#3E6F5C" : "#9A3C3C", background: message.type === "ok" ? "#E4EEE7" : "#F6E8E8", padding: "10px 12px", borderRadius: 3, lineHeight: 1.5 }}>{message.text}</div>}
               {message?.type !== "ok" ? (
-                <button className="cb-btn" disabled={!firstName || !lastName || !email || !password || !confirm || loading} onClick={handleSignup}>{loading ? "Submitting…" : "Submit request"}</button>
+                <React.Fragment>
+                  <button className="cb-btn" disabled={!firstName || !lastName || !email || !password || !confirm || loading} onClick={handleSignup}>{loading ? "Submitting…" : "Submit request"}</button>
+                  <button onClick={onSwitchToLogin} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#6B6354", textDecoration: "underline", fontFamily: "'Inter', sans-serif", textAlign: "center" }}>← Back to sign in</button>
+                </React.Fragment>
               ) : (
                 <button className="cb-btn-ghost" onClick={onSwitchToLogin}>← Back to sign in</button>
               )}
-              <button onClick={onSwitchToLogin} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#6B6354", textDecoration: "underline", fontFamily: "'Inter', sans-serif", textAlign: "center" }}>← Back to sign in</button>
             </div>
           </div>
         </div>
@@ -315,7 +341,7 @@
     }
 
     function Toast({ message, type, onDone }) {
-      useEffect(() => { const t = setTimeout(onDone, 2800); return () => clearTimeout(t); }, []);
+      useEffect(() => { const t = setTimeout(onDone, type === "error" ? 5000 : 2800); return () => clearTimeout(t); }, []);
       return <div className={`toast${type === "error" ? " error" : ""}`}>{message}</div>;
     }
 
@@ -431,8 +457,8 @@
 
     // ── Main Board ────────────────────────────────────────────────────────────
     function CrewBoard({ user, role }) {
-      const isOwner = role === "owner";
-      const isAdmin = role === "admin" || role === "owner";
+      const isOwner = isOwnerRole(role);
+      const isAdmin = isManagerRole(role);
       const isEditor = isAdmin;
       const [fullName, setFullName] = useState("");
       const [roster, setRoster] = useState([]);
@@ -491,6 +517,22 @@
       const positions = useMemo(() => Array.from(new Set(withStatus.map(p => p.position).filter(Boolean))).sort(), [withStatus]);
       const trades = useMemo(() => Array.from(new Set(withStatus.map(p => p.trade).filter(Boolean))).sort(), [withStatus]);
 
+      // Manage Users visibility.
+      // The Owner sees everyone. An Admin sees only members — admin and owner
+      // accounts are the Owner's to manage, and the database now enforces that,
+      // so showing those rows to an Admin would only produce failed actions.
+      const visibleUsers = useMemo(() => allUsers.filter(u => {
+        if (isOwner) return true;
+        if (u.role?.startsWith("hidden_")) return false;
+        if (isManagerRole(u.role)) return false;
+        return true;
+      }), [allUsers, isOwner]);
+
+      const visiblePendingUsers = useMemo(
+        () => pendingUsers.filter(u => isOwner || !u.role?.startsWith("hidden_")),
+        [pendingUsers, isOwner]
+      );
+
       const filtered = useMemo(() => withStatus
         .filter(p => filter === "all" ? true : p.status === filter)
         .filter(p => positionFilter === "all" ? true : (p.position || "") === positionFilter)
@@ -523,7 +565,14 @@
 
       async function viewerRequest(form, action) {
         setSaving(true);
-        const { error } = await sb.from("requests").insert({ requester_id: user.id, requester_email: user.email, requester_full_name: fullName || null, action, payload: JSON.stringify(form), status: "pending", roster_id: form.id || null });
+        // requester_id and status are pinned by the database insert policy —
+        // they must match the signed-in user and 'pending' respectively.
+        const { error } = await sb.from("requests").insert({
+          requester_id: user.id, requester_email: user.email,
+          requester_full_name: fullName || null,
+          action, payload: JSON.stringify(form), status: "pending",
+          roster_id: form.id || null,
+        });
         setSaving(false);
         if (error) notify("Request failed: " + error.message, "error");
         else { setEditing(null); setConfirmDelete(null); notify("Request submitted for approval"); }
@@ -531,13 +580,13 @@
 
       async function approveUser(u, newRole) {
         const { error } = await sb.from("user_roles").update({ status: "approved", role: newRole }).eq("user_id", u.user_id);
-        if (error) { notify("Failed to approve user", "error"); return; }
+        if (error) { notify("Failed to approve user: " + error.message, "error"); return; }
         notify(`${u.full_name || u.email} approved as ${newRole === "admin" ? "Admin" : "Member"}`); load();
       }
 
       async function rejectUser(u) {
         const { error } = await sb.from("user_roles").update({ status: "rejected" }).eq("user_id", u.user_id);
-        if (error) { notify("Failed to reject user", "error"); return; }
+        if (error) { notify("Failed to reject user: " + error.message, "error"); return; }
         notify("User rejected"); load();
       }
 
@@ -545,7 +594,7 @@
         const update = { status: newStatus };
         if (newRole) update.role = newRole;
         const { error } = await sb.from("user_roles").update(update).eq("user_id", u.user_id);
-        if (error) notify("Failed to update user", "error");
+        if (error) notify("Failed to update user: " + error.message, "error");
         else { notify(`${u.full_name || u.email} updated`); load(); }
       }
 
@@ -581,7 +630,8 @@
       }
 
       async function rejectRequest(id, req) {
-        await sb.from("requests").update({ status: "rejected" }).eq("id", id);
+        const { error } = await sb.from("requests").update({ status: "rejected" }).eq("id", id);
+        if (error) { notify("Reject failed: " + error.message, "error"); return; }
         if (req) await notifyRequestResult(req, false);
         notify("Request rejected"); load();
       }
@@ -610,14 +660,14 @@
             </div>
 
             {/* Access Requests */}
-            {isAdmin && pendingUsers.length > 0 && (
+            {isAdmin && visiblePendingUsers.length > 0 && (
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 16, textTransform: "uppercase", marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
                   Access Requests
-                  <span style={{ background: "#1F4E78", color: "#fff", borderRadius: 99, fontSize: 11, fontFamily: "'Inter', sans-serif", padding: "2px 8px" }}>{pendingUsers.length}</span>
+                  <span style={{ background: "#1F4E78", color: "#fff", borderRadius: 99, fontSize: 11, fontFamily: "'Inter', sans-serif", padding: "2px 8px" }}>{visiblePendingUsers.length}</span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {pendingUsers.map(u => (
+                  {visiblePendingUsers.map(u => (
                     <div key={u.user_id} style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderLeft: "4px solid #2E6394", borderRadius: 3, padding: "12px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 14 }}>{u.full_name || u.email}</div>
@@ -642,8 +692,16 @@
             {isAdmin && showUsers && (
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 16, textTransform: "uppercase", marginBottom: 10 }}>All Users</div>
+                {!isOwner && (
+                  <div className="note-bar">
+                    Admin and Owner accounts are managed by the Owner and are not shown here.
+                  </div>
+                )}
+                {visibleUsers.length === 0 ? (
+                  <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 28, textAlign: "center", color: "#8A8270", fontSize: 13 }}>No users to manage yet.</div>
+                ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {allUsers.filter(u => isOwner || (!u.role?.startsWith("hidden_") && u.role !== "owner")).map(u => (
+                  {visibleUsers.map(u => (
                     <div key={u.user_id} style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "12px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 14 }}>{u.full_name || u.email}</div>
@@ -653,19 +711,20 @@
                         </div>
                       </div>
                       {u.user_id === user.id && <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>YOU</div>}
-                      {u.user_id !== user.id && u.role !== "owner" && (
+                      {u.user_id !== user.id && !isOwnerRole(u.role) && (
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           {u.status !== "approved" && <button className="cb-btn-approve" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "approved", u.role || "member")}>Approve</button>}
                           {u.status === "approved" && u.role !== "admin" && isOwner && <button className="cb-btn" style={{ fontSize: 12, padding: "7px 12px", background: "#1F4E78", borderColor: "#1F4E78" }} onClick={() => changeUserStatus(u, "approved", "admin")}>Make Admin</button>}
                           {u.status === "approved" && u.role === "admin" && isOwner && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "approved", "member")}>Demote to Member</button>}
-                          {u.status !== "rejected" && <button className="cb-btn-danger" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "rejected", u.role)}>Revoke access</button>}
-                          {isOwner && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, u.status, u.role === "hidden_member" ? "member" : "hidden_" + u.role)}>{u.role?.startsWith("hidden_") ? "Unhide" : "Hide"}</button>}
+                          {u.status !== "rejected" && <button className="cb-btn-danger" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "rejected", null)}>Revoke access</button>}
+                          {isOwner && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, u.status, u.role?.startsWith("hidden_") ? u.role.replace("hidden_", "") : "hidden_" + u.role)}>{u.role?.startsWith("hidden_") ? "Unhide" : "Hide"}</button>}
                         </div>
                       )}
-                      {u.user_id !== user.id && u.role === "owner" && <div style={{ fontSize: 11, color: "#A4621A", fontFamily: "'JetBrains Mono', monospace" }}>OWNER — PROTECTED</div>}
+                      {u.user_id !== user.id && isOwnerRole(u.role) && <div style={{ fontSize: 11, color: "#A4621A", fontFamily: "'JetBrains Mono', monospace" }}>OWNER — PROTECTED</div>}
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             )}
 
@@ -882,7 +941,6 @@
         if (!data) { setRole("pending"); }
         else if (data.status === "pending") { setRole("pending"); }
         else if (data.status === "rejected") { setRole("rejected"); }
-        else if (data.role?.startsWith("hidden_")) { setRole(data.role.replace("hidden_", "")); }
         else { setRole(data.role || "member"); }
         setChecking(false);
       }
