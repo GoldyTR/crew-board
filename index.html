@@ -80,7 +80,7 @@
     .search-bar input { flex: 1; min-width: 160px; }
     .board-header {
       display: flex; justify-content: space-between; align-items: flex-end;
-      margin-bottom: 20px; border-bottom: 2px solid #1B2A33; padding-bottom: 14px; gap: 12px;
+      margin-bottom: 16px; gap: 12px;
     }
     .req-row {
       background: #FFFEFA; border: 1px solid #D8D2BF; border-left: 4px solid #C9821F;
@@ -94,8 +94,67 @@
     }
     .note-bar {
       font-size: 12px; color: #6B6354; background: #EFEBDD; border: 1px solid #D8D2BF;
-      border-radius: 3px; padding: "8px 12px"; padding: 8px 12px; margin-bottom: 10px;
+      border-radius: 3px; padding: 8px 12px; margin-bottom: 10px;
     }
+    .section-title {
+      font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 16px;
+      text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 10px;
+    }
+    /* Tabs */
+    .tab-strip { display: flex; gap: 2px; border-bottom: 2px solid #1B2A33; margin-bottom: 20px; }
+    .tab-btn {
+      font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 14px;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      background: transparent; border: 1px solid transparent; border-bottom: none;
+      color: #8A8270; padding: 10px 20px; cursor: pointer; border-radius: 3px 3px 0 0;
+      margin-bottom: -2px;
+    }
+    .tab-btn:hover { color: #1B2A33; background: #EDE9DC; }
+    .tab-btn.active { background: #1B2A33; color: #F7F4EC; border-color: #1B2A33; }
+    /* Manpower */
+    .mp-card {
+      background: #FFFEFA; border: 1px solid #D8D2BF; border-left: 4px solid #1F4E78;
+      border-radius: 3px; margin-bottom: 10px;
+    }
+    .mp-card-head {
+      padding: 13px 16px; display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; cursor: pointer; flex-wrap: wrap;
+    }
+    .mp-card-head:hover { background: #FBF9F2; }
+    .mp-card-body { border-top: 1px solid #E3DFD1; padding: 14px 16px; }
+    .mp-grid { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .mp-grid th {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600;
+      letter-spacing: 0.06em; color: #8A8270; text-align: right; padding: 0 6px 7px;
+      white-space: nowrap;
+    }
+    .mp-grid th:first-child { text-align: left; }
+    .mp-grid td { padding: 4px 6px; border-top: 1px solid #EDE9DC; text-align: right; }
+    .mp-grid td:first-child { text-align: left; color: #5A5444; }
+    .mp-num {
+      font-family: 'JetBrains Mono', monospace; font-size: 13px; width: 68px;
+      border: 1px solid #C9C2AC; background: #FFFEFA; color: #1B2A33;
+      border-radius: 3px; padding: 6px 8px; text-align: right; -webkit-appearance: none;
+    }
+    .mp-num:focus { outline: 2px solid #1F4E78; outline-offset: 1px; }
+    .mp-num:disabled { background: #F2EFE4; color: #8A8270; }
+    .mp-readonly { font-family: 'JetBrains Mono', monospace; font-size: 13px; padding: 6px 8px; display: inline-block; }
+    .roll-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #FFFEFA; }
+    .roll-table th {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em;
+      color: #8A8270; text-align: right; padding: 9px 10px; border-bottom: 1px solid #D8D2BF;
+      white-space: nowrap;
+    }
+    .roll-table th:first-child { text-align: left; }
+    .roll-table td { padding: 9px 10px; border-bottom: 1px solid #EDE9DC; text-align: right; font-family: 'JetBrains Mono', monospace; }
+    .roll-table td:first-child { text-align: left; font-family: 'Inter', sans-serif; }
+    .pill-up { color: #9A3C3C; background: #F6E8E8; border: 1px solid #C98787; border-radius: 3px; padding: 1px 6px; font-size: 11px; }
+    .pill-down { color: #3E6F5C; background: #E4EEE7; border: 1px solid #8DB3A2; border-radius: 3px; padding: 1px 6px; font-size: 11px; }
+    .move-card {
+      background: #FFFEFA; border: 1px solid #D8D2BF; border-left: 4px solid #3E6F5C;
+      border-radius: 3px; padding: 12px 16px; margin-bottom: 8px; font-size: 13px;
+    }
+    .move-card.hire { border-left-color: #C9821F; }
   </style>
 </head>
 <body>
@@ -113,10 +172,59 @@
     const isManagerRole = (r) => MANAGER_ROLES.includes(r);
     const isOwnerRole = (r) => r === "owner" || r === "hidden_owner";
 
+    const OWNER_EMAIL = "goldytraju@gmail.com";
+
+    // NOTE: this is a stub. Browser-side code cannot send mail. Wiring this up
+    // requires a Supabase Edge Function with a mail provider key. Until then,
+    // no access-request or approval notifications are actually delivered.
+    // (Supabase Auth password-reset mail is separate and does work.)
+    async function sendEmail(to, subject, html) {
+      console.log("Email notification (not sent — server-side function needed):", { to, subject });
+    }
+
+    // ── Date helpers ──────────────────────────────────────────────────────────
+
+    function isoDate(d) {
+      const p = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+
+    function endOfMonth(year, monthIndex) {
+      return new Date(year, monthIndex + 1, 0);
+    }
+
+    function monthLabel(d) {
+      return d.toLocaleDateString("en-CA", { month: "long" });
+    }
+
+    // Two forecast buckets: end of this month and end of next.
+    // When fewer than 7 days remain in the current month the window rolls
+    // forward, so nobody is ever asked to forecast two days out.
+    const ROLLOVER_DAYS = 7;
+
+    function computePeriods(today = new Date()) {
+      const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const thisMonthEnd = endOfMonth(t.getFullYear(), t.getMonth());
+      const daysLeft = Math.round((thisMonthEnd - t) / 86400000);
+      const shift = daysLeft < ROLLOVER_DAYS ? 1 : 0;
+      const p1 = endOfMonth(t.getFullYear(), t.getMonth() + shift);
+      const p2 = endOfMonth(t.getFullYear(), t.getMonth() + shift + 1);
+      return [
+        { key: "now", date: null, label: "On site now", short: "NOW" },
+        { key: isoDate(p1), date: isoDate(p1), label: "End of " + monthLabel(p1), short: monthLabel(p1).slice(0, 3).toUpperCase() },
+        { key: isoDate(p2), date: isoDate(p2), label: "End of " + monthLabel(p2), short: monthLabel(p2).slice(0, 3).toUpperCase() },
+      ];
+    }
+
     function daysUntil(dateStr) {
       if (!dateStr) return null;
       const today = new Date(); today.setHours(0,0,0,0);
       return Math.round((new Date(dateStr + "T00:00:00") - today) / 86400000);
+    }
+
+    function daysSince(tsStr) {
+      if (!tsStr) return null;
+      return Math.floor((new Date() - new Date(tsStr)) / 86400000);
     }
 
     function deriveStatus(p) {
@@ -141,6 +249,8 @@
       if (!d) return "—";
       return new Date(d + "T00:00:00").toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
     }
+
+    // ── Shared inputs ─────────────────────────────────────────────────────────
 
     function PasswordField({ label, value, onChange, placeholder, onKeyDown }) {
       const [show, setShow] = React.useState(false);
@@ -177,14 +287,9 @@
       );
     }
 
-    const OWNER_EMAIL = "goldytraju@gmail.com";
-
-    // NOTE: this is a stub. Browser-side code cannot send mail. Wiring this up
-    // requires a Supabase Edge Function with a mail provider key. Until then,
-    // no access-request or approval notifications are actually delivered.
-    // (Supabase Auth password-reset mail is separate and does work.)
-    async function sendEmail(to, subject, html) {
-      console.log("Email notification (not sent — server-side function needed):", { to, subject });
+    function Toast({ message, type, onDone }) {
+      useEffect(() => { const t = setTimeout(onDone, type === "error" ? 5000 : 2800); return () => clearTimeout(t); }, []);
+      return <div className={`toast${type === "error" ? " error" : ""}`}>{message}</div>;
     }
 
     // ── Login Screen ──────────────────────────────────────────────────────────
@@ -340,11 +445,6 @@
       );
     }
 
-    function Toast({ message, type, onDone }) {
-      useEffect(() => { const t = setTimeout(onDone, type === "error" ? 5000 : 2800); return () => clearTimeout(t); }, []);
-      return <div className={`toast${type === "error" ? " error" : ""}`}>{message}</div>;
-    }
-
     // ── Requests Panel ────────────────────────────────────────────────────────
     const FIELD_LABELS = {
       name: "Name", position: "Position", trade: "Trade", current_project: "Current project",
@@ -367,12 +467,23 @@
 
     function RequestCard({ r, roster, onApprove, onReject }) {
       const [expanded, setExpanded] = useState(false);
-      const payload = JSON.parse(r.payload);
+      let payload = {};
+      try { payload = JSON.parse(r.payload); } catch (e) { payload = {}; }
+      const kind = r.kind || "roster";
       const current = roster.find(p => p.id === r.roster_id) || {};
       const fields = ["name","position","trade","current_project","project_end","next_project","vacation_start","vacation_end","comments"];
-      const actionIcon = r.action === "add" ? "➕" : r.action === "edit" ? "✏️" : "🗑";
-      const actionLabel = r.action === "add" ? "add" : r.action === "edit" ? "edit" : "remove";
       const requesterName = r.requester_full_name || r.requester_email;
+
+      const KIND_ICON = { manpower: "📊", project: "🏗", trade: "🔧" };
+      const actionIcon = kind === "roster"
+        ? (r.action === "add" ? "➕" : r.action === "edit" ? "✏️" : "🗑")
+        : KIND_ICON[kind];
+
+      const headline =
+        kind === "project"  ? <span>requested a new project <strong>{payload.name}</strong></span> :
+        kind === "trade"    ? <span>requested a new trade <strong>{payload.name}</strong></span> :
+        kind === "manpower" ? <span>submitted manpower for <strong>{payload.project_name}</strong></span> :
+        <span>requested to {r.action === "add" ? "add" : r.action === "edit" ? "edit" : "remove"} <strong>{payload.name}</strong></span>;
 
       return (
         <div>
@@ -380,9 +491,8 @@
             <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
               <span style={{ fontSize: 14 }}>{actionIcon}</span>
               <div style={{ fontSize: 13, color: "#1B2A33" }}>
-                <strong>{requesterName}</strong>
-                <span style={{ color: "#8A8270" }}> requested to {actionLabel} </span>
-                <strong>{payload.name}</strong>
+                <strong>{requesterName}</strong>{" "}
+                <span style={{ color: "#8A8270" }}>{headline}</span>
               </div>
             </div>
             <span style={{ fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
@@ -397,13 +507,52 @@
                 {r.requester_full_name && <span style={{ fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace", marginLeft: 8 }}>{r.requester_email}</span>}
               </div>
 
-              {r.action === "remove" && (
+              {(kind === "project" || kind === "trade") && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 13, marginBottom: 8 }}>
+                    New {kind} name: <strong style={{ color: "#3E6F5C" }}>{payload.name}</strong>
+                  </div>
+                  <div className="note-bar" style={{ marginBottom: 0 }}>
+                    Check the spelling before approving. Once approved this becomes the name
+                    everyone selects, and the rollup groups on it.
+                  </div>
+                </div>
+              )}
+
+              {kind === "manpower" && (
+                <div style={{ marginBottom: 12, overflowX: "auto" }}>
+                  <table className="mp-grid">
+                    <thead>
+                      <tr>
+                        <th>Line</th>
+                        {(payload.periods || []).map(p => <th key={p.key}>{(p.label || "").toUpperCase()}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(payload.rows || []).map((row, i) => (
+                        <tr key={i}>
+                          <td>{row.label}</td>
+                          {(payload.periods || []).map(p => (
+                            <td key={p.key}>
+                              <span className="mp-readonly" style={{ color: "#3E6F5C", fontWeight: 600 }}>
+                                {row.values ? (row.values[p.key] ?? 0) : 0}
+                              </span>
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {kind === "roster" && r.action === "remove" && (
                 <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", padding: "8px 12px", borderRadius: 3, marginBottom: 12 }}>
                   This will permanently remove <strong>{payload.name}</strong> from the board.
                 </div>
               )}
 
-              {r.action === "add" && (
+              {kind === "roster" && r.action === "add" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 0, marginBottom: 12 }}>
                   {fields.filter(f => payload[f]).map(f => (
                     <div key={f} style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: 8, fontSize: 12, padding: "5px 0", borderBottom: "1px solid #EDE9DC" }}>
@@ -414,7 +563,7 @@
                 </div>
               )}
 
-              {r.action === "edit" && (
+              {kind === "roster" && r.action === "edit" && (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 1fr", gap: 8, marginBottom: 4 }}>
                     <div></div>
@@ -444,7 +593,7 @@
       if (requests.length === 0) return null;
       return (
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 16, textTransform: "uppercase", marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="section-title">
             Pending Requests
             <span style={{ background: "#C9821F", color: "#fff", borderRadius: 99, fontSize: 11, fontFamily: "'Inter', sans-serif", padding: "2px 8px" }}>{requests.length}</span>
           </div>
@@ -455,11 +604,771 @@
       );
     }
 
-    // ── Main Board ────────────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    //  MANPOWER
+    // ══════════════════════════════════════════════════════════════════════════
+
+    // Grouped bars: one group per period, one bar per trade plus Unspecified.
+    function AggregateChart({ rollup, periods, trades }) {
+      const W = 640, H = 190, padL = 46, padB = 34, padT = 14, padR = 10;
+      const rows = trades.map(t => ({
+        name: t.name,
+        values: periods.map(p => (rollup.byTrade[t.id] || {})[p.key] || 0),
+      }));
+      rows.push({ name: "Unspecified", values: periods.map(p => rollup.unspecified[p.key] || 0) });
+
+      const max = Math.max(1, ...rows.reduce((a, r) => a.concat(r.values), []));
+      const plotW = W - padL - padR, plotH = H - padB - padT;
+      const groupW = plotW / periods.length;
+      const barW = Math.min(46, (groupW - 16) / Math.max(1, rows.length));
+      const COLORS = ["#1F4E78", "#3E6F5C", "#C9821F", "#7A3B3B", "#5A5444"];
+
+      return (
+        <div style={{ overflowX: "auto" }}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 420, height: "auto", display: "block" }}>
+            {[0, 0.5, 1].map(f => {
+              const y = padT + plotH - f * plotH;
+              return (
+                <g key={f}>
+                  <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#E3DFD1" strokeWidth="1" />
+                  <text x={padL - 7} y={y + 4} textAnchor="end" fontSize="10" fill="#8A8270" fontFamily="'JetBrains Mono', monospace">
+                    {Math.round(max * f)}
+                  </text>
+                </g>
+              );
+            })}
+            {periods.map((p, pi) => {
+              const gx = padL + pi * groupW;
+              return (
+                <g key={p.key}>
+                  {rows.map((r, ri) => {
+                    const v = r.values[pi];
+                    const h = (v / max) * plotH;
+                    const x = gx + (groupW - barW * rows.length) / 2 + ri * barW;
+                    return (
+                      <g key={r.name}>
+                        <rect x={x} y={padT + plotH - h} width={Math.max(2, barW - 3)} height={h}
+                          fill={COLORS[ri % COLORS.length]} opacity={r.name === "Unspecified" ? 0.4 : 1} />
+                        {v > 0 && (
+                          <text x={x + (barW - 3) / 2} y={padT + plotH - h - 4} textAnchor="middle"
+                            fontSize="10" fill="#5A5444" fontFamily="'JetBrains Mono', monospace">{v}</text>
+                        )}
+                      </g>
+                    );
+                  })}
+                  <text x={gx + groupW / 2} y={H - padB + 16} textAnchor="middle" fontSize="10"
+                    fill="#5A5444" fontFamily="'JetBrains Mono', monospace">{p.short}</text>
+                </g>
+              );
+            })}
+          </svg>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 6 }}>
+            {rows.map((r, i) => (
+              <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#5A5444" }}>
+                <span style={{ width: 10, height: 10, background: COLORS[i % COLORS.length], opacity: r.name === "Unspecified" ? 0.4 : 1, borderRadius: 2 }} />
+                {r.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Actual headcount over time for one project, with the forecast dashed on the end.
+    function ProjectTrendChart({ actuals, forecast, periods }) {
+      const hist = actuals.slice().sort((a, b) => String(a.recorded_on).localeCompare(String(b.recorded_on)));
+      const points = hist.map(a => ({ label: a.recorded_on, value: a.headcount, actual: true }));
+      periods.slice(1).forEach(p => points.push({ label: p.date, value: forecast[p.key] || 0, actual: false }));
+
+      if (points.length < 2) {
+        return (
+          <div style={{ fontSize: 12, color: "#8A8270", padding: "6px 0" }}>
+            Not enough history yet — the curve appears once this project has been updated on more than one day.
+          </div>
+        );
+      }
+
+      const W = 560, H = 150, padL = 36, padB = 26, padT = 12, padR = 10;
+      const plotW = W - padL - padR, plotH = H - padB - padT;
+      const max = Math.max(1, ...points.map(p => p.value));
+      const xAt = i => padL + (i / (points.length - 1)) * plotW;
+      const yAt = v => padT + plotH - (v / max) * plotH;
+      const lastActual = points.filter(p => p.actual).length - 1;
+
+      const solid = points.slice(0, lastActual + 1).map((p, i) => `${xAt(i)},${yAt(p.value)}`).join(" ");
+      const from = Math.max(0, lastActual);
+      const dashed = points.slice(from).map((p, i) => `${xAt(i + from)},${yAt(p.value)}`).join(" ");
+
+      return (
+        <div style={{ overflowX: "auto" }}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 360, height: "auto", display: "block" }}>
+            {[0, 0.5, 1].map(f => {
+              const y = padT + plotH - f * plotH;
+              return (
+                <g key={f}>
+                  <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#EDE9DC" strokeWidth="1" />
+                  <text x={padL - 6} y={y + 4} textAnchor="end" fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">{Math.round(max * f)}</text>
+                </g>
+              );
+            })}
+            {lastActual >= 1 && <polyline points={solid} fill="none" stroke="#1F4E78" strokeWidth="2" />}
+            <polyline points={dashed} fill="none" stroke="#C9821F" strokeWidth="2" strokeDasharray="5 4" />
+            {points.map((p, i) => (
+              <circle key={i} cx={xAt(i)} cy={yAt(p.value)} r="3" fill={p.actual ? "#1F4E78" : "#C9821F"} />
+            ))}
+            <text x={padL} y={H - 8} fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">{points[0].label}</text>
+            <text x={W - padR} y={H - 8} textAnchor="end" fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">{points[points.length - 1].label}</text>
+          </svg>
+          <div style={{ display: "flex", gap: 14, fontSize: 11, color: "#5A5444", marginTop: 2 }}>
+            <span><span style={{ display: "inline-block", width: 14, height: 2, background: "#1F4E78", verticalAlign: "middle", marginRight: 5 }} />Actual</span>
+            <span><span style={{ display: "inline-block", width: 14, height: 2, background: "#C9821F", verticalAlign: "middle", marginRight: 5 }} />Forecast</span>
+          </div>
+        </div>
+      );
+    }
+
+    function ManpowerView({ user, role, notify, onRequestSubmitted }) {
+      const isOwner = isOwnerRole(role);
+      const isAdmin = isManagerRole(role);
+
+      const [projects, setProjects] = useState([]);
+      const [trades, setTrades] = useState([]);
+      const [assignments, setAssignments] = useState([]);
+      const [rows, setRows] = useState([]);
+      const [actuals, setActuals] = useState([]);
+      const [approvalRequired, setApprovalRequired] = useState(false);
+      const [members, setMembers] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [expanded, setExpanded] = useState(null);
+      const [drafts, setDrafts] = useState({});
+      const [saving, setSaving] = useState(false);
+      const [askNew, setAskNew] = useState(null); // 'project' | 'trade'
+      const [newName, setNewName] = useState("");
+      const [showAssign, setShowAssign] = useState(false);
+
+      const periods = useMemo(() => computePeriods(), []);
+
+      const load = useCallback(async () => {
+        const [pRes, tRes, aRes, mRes, acRes, sRes] = await Promise.all([
+          sb.from("projects").select("*").eq("status", "approved").order("name"),
+          sb.from("trades").select("*").eq("status", "approved").order("name"),
+          sb.from("project_assignments").select("*"),
+          sb.from("manpower").select("*"),
+          sb.from("manpower_actuals").select("*").order("recorded_on", { ascending: true }),
+          sb.from("app_settings").select("*").eq("key", "manpower_approval_required").maybeSingle(),
+        ]);
+        setProjects(pRes.data || []);
+        setTrades(tRes.data || []);
+        setAssignments(aRes.data || []);
+        setRows(mRes.data || []);
+        setActuals(acRes.data || []);
+        setApprovalRequired(sRes.data?.value === "true");
+        if (isAdmin) {
+          const { data: us } = await sb.from("user_roles").select("*").eq("status", "approved").order("full_name");
+          setMembers((us || []).filter(u => !isManagerRole(u.role)));
+        }
+        setLoading(false);
+      }, [isAdmin]);
+
+      useEffect(() => { load(); }, [load]);
+
+      useEffect(() => {
+        const ch = sb.channel("manpower-changes")
+          .on("postgres_changes", { event: "*", schema: "public", table: "manpower" }, () => load())
+          .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => load())
+          .on("postgres_changes", { event: "*", schema: "public", table: "trades" }, () => load())
+          .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => load())
+          .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, () => load())
+          .subscribe();
+        return () => { sb.removeChannel(ch); };
+      }, [load]);
+
+      const myProjectIds = useMemo(
+        () => new Set(assignments.filter(a => a.user_id === user.id).map(a => a.project_id)),
+        [assignments, user.id]
+      );
+
+      // Mirrors can_write_manpower() in the database. Managers always write
+      // directly; an assigned member writes directly only while the owner's
+      // approval toggle is off, and otherwise submits a request.
+      function accessFor(projectId) {
+        if (isAdmin) return "write";
+        if (!myProjectIds.has(projectId)) return "view";
+        return approvalRequired ? "request" : "write";
+      }
+
+      const cell = useCallback((projectId, tradeId, periodKey) => {
+        return rows.find(x =>
+          x.project_id === projectId &&
+          (x.trade_id === undefined ? null : x.trade_id) === (tradeId === undefined ? null : tradeId) &&
+          (x.period_date || "now") === periodKey) || null;
+      }, [rows]);
+
+      const draftKey = (projectId, tradeId, periodKey) => `${projectId}|${tradeId === null ? "T" : tradeId}|${periodKey}`;
+
+      function valueOf(projectId, tradeId, periodKey) {
+        const k = draftKey(projectId, tradeId, periodKey);
+        if (k in drafts) return drafts[k];
+        const r = cell(projectId, tradeId, periodKey);
+        return r ? String(r.headcount) : "";
+      }
+
+      function setValue(projectId, tradeId, periodKey, v) {
+        if (v !== "" && !/^\d{0,5}$/.test(v)) return;
+        setDrafts(d => Object.assign({}, d, { [draftKey(projectId, tradeId, periodKey)]: v }));
+      }
+
+      const num = (v) => { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; };
+
+      function unspecifiedFor(projectId, periodKey) {
+        const total = num(valueOf(projectId, null, periodKey));
+        const detailed = trades.reduce((s, t) => s + num(valueOf(projectId, t.id, periodKey)), 0);
+        return total - detailed;
+      }
+
+      const projectDirty = (projectId) => Object.keys(drafts).some(k => k.indexOf(projectId + "|") === 0);
+      const overAllocated = (projectId) => periods.some(p => unspecifiedFor(projectId, p.key) < 0);
+
+      function lastUpdatedFor(projectId) {
+        const mine = rows.filter(r => r.project_id === projectId && r.updated_at).map(r => r.updated_at);
+        if (mine.length === 0) return null;
+        return mine.sort()[mine.length - 1];
+      }
+
+      function clearDrafts(projectId) {
+        setDrafts(d => {
+          const next = Object.assign({}, d);
+          Object.keys(next).forEach(k => { if (k.indexOf(projectId + "|") === 0) delete next[k]; });
+          return next;
+        });
+      }
+
+      // ── Save ────────────────────────────────────────────────────────────────
+
+      function collectCells(projectId) {
+        const out = [];
+        [null].concat(trades.map(t => t.id)).forEach(tradeId => {
+          periods.forEach(p => {
+            const k = draftKey(projectId, tradeId, p.key);
+            if (!(k in drafts)) return;
+            out.push({
+              project_id: projectId, trade_id: tradeId, period_date: p.date,
+              headcount: num(drafts[k]), existing: cell(projectId, tradeId, p.key),
+            });
+          });
+        });
+        return out;
+      }
+
+      async function saveProject(projectId) {
+        if (overAllocated(projectId)) {
+          notify("Trade lines add up to more than the total — fix that first.", "error");
+          return;
+        }
+        const cells = collectCells(projectId);
+        if (cells.length === 0) return;
+        setSaving(true);
+
+        const updates = cells.filter(c => c.existing).map(c => ({
+          id: c.existing.id, project_id: c.project_id, trade_id: c.trade_id,
+          period_date: c.period_date, headcount: c.headcount,
+        }));
+        const inserts = cells.filter(c => !c.existing).map(c => ({
+          project_id: c.project_id, trade_id: c.trade_id,
+          period_date: c.period_date, headcount: c.headcount,
+        }));
+
+        let err = null;
+        if (updates.length) {
+          const { error } = await sb.from("manpower").upsert(updates);
+          if (error) err = error;
+        }
+        if (!err && inserts.length) {
+          const { error } = await sb.from("manpower").insert(inserts);
+          if (error) err = error;
+        }
+        setSaving(false);
+        if (err) { notify("Save failed: " + err.message, "error"); return; }
+        clearDrafts(projectId);
+        notify("Manpower updated");
+        load();
+      }
+
+      async function submitProjectRequest(projectId) {
+        if (overAllocated(projectId)) {
+          notify("Trade lines add up to more than the total — fix that first.", "error");
+          return;
+        }
+        const project = projects.find(p => p.id === projectId);
+        const bodyRows = [{
+          label: "Total", trade_id: null,
+          values: periods.reduce((o, p) => { o[p.key] = num(valueOf(projectId, null, p.key)); return o; }, {}),
+        }].concat(trades.map(t => ({
+          label: t.name, trade_id: t.id,
+          values: periods.reduce((o, p) => { o[p.key] = num(valueOf(projectId, t.id, p.key)); return o; }, {}),
+        })));
+
+        setSaving(true);
+        const { error } = await sb.from("requests").insert({
+          kind: "manpower", action: "edit", status: "pending",
+          requester_id: user.id, requester_email: user.email,
+          payload: JSON.stringify({
+            project_id: projectId,
+            project_name: project ? project.name : "",
+            periods: periods.map(p => ({ key: p.key, date: p.date, label: p.label })),
+            rows: bodyRows,
+          }),
+        });
+        setSaving(false);
+        if (error) { notify("Request failed: " + error.message, "error"); return; }
+        clearDrafts(projectId);
+        notify("Manpower submitted for approval");
+        if (onRequestSubmitted) onRequestSubmitted();
+      }
+
+      async function submitNewName() {
+        const name = newName.trim();
+        if (!name) return;
+        setSaving(true);
+        const { error } = await sb.from("requests").insert({
+          kind: askNew, action: "add", status: "pending",
+          requester_id: user.id, requester_email: user.email,
+          payload: JSON.stringify({ name }),
+        });
+        setSaving(false);
+        if (error) { notify("Request failed: " + error.message, "error"); return; }
+        const what = askNew;
+        setAskNew(null); setNewName("");
+        notify(`New ${what} submitted for approval`);
+        if (onRequestSubmitted) onRequestSubmitted();
+      }
+
+      async function toggleApproval() {
+        const next = approvalRequired ? "false" : "true";
+        const { error } = await sb.from("app_settings")
+          .update({ value: next, updated_by: user.id, updated_at: new Date().toISOString() })
+          .eq("key", "manpower_approval_required");
+        if (error) { notify("Could not change the setting: " + error.message, "error"); return; }
+        setApprovalRequired(next === "true");
+        notify(next === "true" ? "Approvals now required" : "Approvals turned off");
+      }
+
+      async function toggleAssignment(userId, projectId, on) {
+        if (on) {
+          const { error } = await sb.from("project_assignments")
+            .insert({ user_id: userId, project_id: projectId, assigned_by: user.id });
+          if (error) { notify("Assign failed: " + error.message, "error"); return; }
+        } else {
+          const { error } = await sb.from("project_assignments")
+            .delete().eq("user_id", userId).eq("project_id", projectId);
+          if (error) { notify("Unassign failed: " + error.message, "error"); return; }
+        }
+        load();
+      }
+
+      // ── Rollup and analytics ────────────────────────────────────────────────
+
+      const rollup = useMemo(() => {
+        const byTrade = {}, unspecified = {}, byProject = {};
+        trades.forEach(t => { byTrade[t.id] = {}; periods.forEach(p => { byTrade[t.id][p.key] = 0; }); });
+        periods.forEach(p => { unspecified[p.key] = 0; });
+
+        projects.forEach(proj => {
+          byProject[proj.id] = { total: {}, trades: {} };
+          trades.forEach(t => { byProject[proj.id].trades[t.id] = {}; });
+          periods.forEach(p => {
+            const totalCell = cell(proj.id, null, p.key);
+            const total = totalCell ? totalCell.headcount : 0;
+            byProject[proj.id].total[p.key] = total;
+            let detailed = 0;
+            trades.forEach(t => {
+              const c = cell(proj.id, t.id, p.key);
+              const v = c ? c.headcount : 0;
+              byProject[proj.id].trades[t.id][p.key] = v;
+              byTrade[t.id][p.key] += v;
+              detailed += v;
+            });
+            unspecified[p.key] += Math.max(0, total - detailed);
+          });
+        });
+        return { byTrade, unspecified, byProject };
+      }, [projects, trades, periods, cell]);
+
+      // For each trade and forecast period: who is releasing, who needs more,
+      // and how much of the need transfers rather than being hired.
+      const moves = useMemo(() => {
+        const out = [];
+        periods.slice(1).forEach(p => {
+          trades.forEach(t => {
+            const releasing = [], needing = [];
+            projects.forEach(proj => {
+              const tr = rollup.byProject[proj.id] ? rollup.byProject[proj.id].trades[t.id] : null;
+              if (!tr) return;
+              const delta = (tr[p.key] || 0) - (tr["now"] || 0);
+              if (delta < 0) releasing.push({ name: proj.name, count: -delta });
+              if (delta > 0) needing.push({ name: proj.name, count: delta });
+            });
+            if (releasing.length === 0 && needing.length === 0) return;
+
+            const totalRel = releasing.reduce((s, r) => s + r.count, 0);
+            const totalNeed = needing.reduce((s, r) => s + r.count, 0);
+
+            // Greedy pairing, biggest release against biggest need.
+            const pool = releasing.map(r => Object.assign({}, r)).sort((a, b) => b.count - a.count);
+            const want = needing.map(r => Object.assign({}, r)).sort((a, b) => b.count - a.count);
+            const transfers = [];
+            pool.forEach(src => {
+              want.forEach(dst => {
+                if (src.count === 0 || dst.count === 0) return;
+                const n = Math.min(src.count, dst.count);
+                transfers.push({ from: src.name, to: dst.name, count: n });
+                src.count -= n; dst.count -= n;
+              });
+            });
+
+            out.push({
+              period: p, trade: t, totalRel, totalNeed, transfers,
+              hire: Math.max(0, totalNeed - totalRel),
+              surplus: Math.max(0, totalRel - totalNeed),
+            });
+          });
+        });
+        return out;
+      }, [projects, trades, periods, rollup]);
+
+      const coverage = useMemo(() => {
+        let total = 0, detailed = 0;
+        projects.forEach(proj => {
+          const bp = rollup.byProject[proj.id];
+          if (!bp) return;
+          total += bp.total["now"] || 0;
+          trades.forEach(t => { detailed += (bp.trades[t.id] || {})["now"] || 0; });
+        });
+        return total === 0 ? null : Math.round((detailed / total) * 100);
+      }, [projects, trades, rollup]);
+
+      const newNameModal = askNew && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setAskNew(null)}>
+          <div className="modal-box" style={{ maxWidth: 400 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 14 }}>
+              Request new {askNew}
+            </div>
+            <Field label={askNew + " name"}>
+              <input className="cb-input" value={newName} onChange={e => setNewName(e.target.value)}
+                placeholder={askNew === "project" ? "e.g. Dry Creek WTP" : "e.g. Pipefitters"}
+                onKeyDown={e => e.key === "Enter" && submitNewName()} />
+            </Field>
+            <div style={{ fontSize: 12, color: "#7A7461", marginTop: 10, lineHeight: 1.5 }}>
+              Spell it exactly as it should appear everywhere — an Admin checks it before
+              approving, because everything groups on this name afterwards.
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+              <button className="cb-btn-ghost" onClick={() => setAskNew(null)}>Cancel</button>
+              <button className="cb-btn" disabled={!newName.trim() || saving} onClick={submitNewName}>
+                {saving ? "Submitting…" : "Submit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+
+      if (loading) return (
+        <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
+          Loading manpower…
+        </div>
+      );
+
+      if (projects.length === 0) return (
+        <div>
+          <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 40, textAlign: "center", color: "#6B6354" }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>No projects yet</div>
+            <div style={{ fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>
+              Projects are created by request so the name gets checked once,<br />
+              before it becomes the one everybody reports against.
+            </div>
+            <button className="cb-btn" onClick={() => { setAskNew("project"); setNewName(""); }}>Request a project</button>
+          </div>
+          {newNameModal}
+        </div>
+      );
+
+      return (
+        <div>
+          {/* Controls */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
+            <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setAskNew("project"); setNewName(""); }}>+ Request project</button>
+            <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setAskNew("trade"); setNewName(""); }}>+ Request trade</button>
+            {isAdmin && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowAssign(!showAssign)}>{showAssign ? "Hide assignments" : "Project assignments"}</button>}
+            <div style={{ marginLeft: "auto" }}>
+              {isOwner ? (
+                <button onClick={toggleApproval} style={{
+                  display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+                  background: "transparent", border: "1px solid #B9B3A0", borderRadius: 3,
+                  padding: "7px 12px", fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#1B2A33",
+                }}>
+                  <span style={{
+                    width: 32, height: 18, borderRadius: 99, position: "relative", display: "inline-block",
+                    background: approvalRequired ? "#3E6F5C" : "#C9C2AC",
+                  }}>
+                    <span style={{
+                      position: "absolute", top: 2, left: approvalRequired ? 16 : 2,
+                      width: 14, height: 14, borderRadius: 99, background: "#fff",
+                    }} />
+                  </span>
+                  Approvals {approvalRequired ? "on" : "off"}
+                </button>
+              ) : (
+                <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "#8A8270" }}>
+                  {approvalRequired ? "APPROVALS ON" : "APPROVALS OFF"}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Assignments (managers) */}
+          {isAdmin && showAssign && (
+            <div style={{ marginBottom: 24 }}>
+              <div className="section-title">Project Assignments</div>
+              <div className="note-bar">
+                A member can only submit numbers for projects assigned to them. Everyone can view every project.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {projects.map(proj => (
+                  <div key={proj.id} style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "12px 16px" }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>{proj.name}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {members.length === 0 && <span style={{ fontSize: 12, color: "#8A8270" }}>No approved members yet.</span>}
+                      {members.map(u => {
+                        const on = assignments.some(a => a.user_id === u.user_id && a.project_id === proj.id);
+                        return (
+                          <button key={u.user_id} onClick={() => toggleAssignment(u.user_id, proj.id, !on)}
+                            style={{
+                              fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500,
+                              padding: "5px 12px", borderRadius: 99, cursor: "pointer",
+                              background: on ? "#1F4E78" : "#FFFEFA", color: on ? "#F7F4EC" : "#5A5444",
+                              border: on ? "1px solid #1F4E78" : "1px solid #C9C2AC",
+                            }}>
+                            {on ? "✓ " : ""}{u.full_name || u.email}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Aggregate picture */}
+          <div style={{ marginBottom: 24 }}>
+            <div className="section-title">Total Manpower</div>
+            <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "16px 16px 10px" }}>
+              <AggregateChart rollup={rollup} periods={periods} trades={trades} />
+            </div>
+            {coverage !== null && coverage < 100 && (
+              <div className="note-bar" style={{ marginTop: 8, marginBottom: 0 }}>
+                {coverage}% of current headcount is broken down by trade. Transfer matching below
+                only uses the trade-level numbers, so the rest is not counted in it.
+              </div>
+            )}
+          </div>
+
+          {/* Rollup table */}
+          <div style={{ marginBottom: 24 }}>
+            <div className="section-title">By Trade</div>
+            <div style={{ overflowX: "auto", border: "1px solid #D8D2BF", borderRadius: 3 }}>
+              <table className="roll-table">
+                <thead>
+                  <tr>
+                    <th>Trade</th>
+                    {periods.map(p => <th key={p.key}>{p.label.toUpperCase()}</th>)}
+                    <th>CHANGE</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trades.map(t => {
+                    const now = rollup.byTrade[t.id]["now"];
+                    const last = rollup.byTrade[t.id][periods[periods.length - 1].key];
+                    const delta = last - now;
+                    return (
+                      <tr key={t.id}>
+                        <td>{t.name}</td>
+                        {periods.map(p => <td key={p.key}>{rollup.byTrade[t.id][p.key]}</td>)}
+                        <td>
+                          {delta === 0 ? <span style={{ color: "#9A9381" }}>—</span> :
+                            <span className={delta > 0 ? "pill-up" : "pill-down"}>{delta > 0 ? "+" : ""}{delta}</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr>
+                    <td style={{ color: "#8A8270" }}>Unspecified</td>
+                    {periods.map(p => <td key={p.key} style={{ color: "#8A8270" }}>{rollup.unspecified[p.key]}</td>)}
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Analytics */}
+          <div style={{ marginBottom: 24 }}>
+            <div className="section-title">Moves &amp; Gaps</div>
+            {moves.length === 0 ? (
+              <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 28, textAlign: "center", color: "#8A8270", fontSize: 13 }}>
+                Nothing moving — every project holds steady across both periods.
+              </div>
+            ) : moves.map((m, i) => (
+              <div key={i} className={"move-card" + (m.hire > 0 ? " hire" : "")}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>{m.trade.name} — {m.period.label}</div>
+                {m.transfers.length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    {m.transfers.map((t, j) => (
+                      <div key={j} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#3E6F5C" }}>
+                        {t.count} from {t.from} → {t.to}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: "#5A5444" }}>
+                  {m.totalRel > 0 && <span>{m.totalRel} releasing. </span>}
+                  {m.totalNeed > 0 && <span>{m.totalNeed} needed. </span>}
+                  {m.hire > 0 && <strong style={{ color: "#A4621A" }}>Hire {m.hire}.</strong>}
+                  {m.surplus > 0 && <strong style={{ color: "#1F4E78" }}>{m.surplus} spare after transfers.</strong>}
+                  {m.hire === 0 && m.surplus === 0 && m.transfers.length > 0 && <strong style={{ color: "#3E6F5C" }}>Fully covered by transfers.</strong>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Per-project entry */}
+          <div className="section-title">Projects</div>
+          {projects.map(proj => {
+            const access = accessFor(proj.id);
+            const open = expanded === proj.id;
+            const editable = access === "write" || access === "request";
+            const dirty = projectDirty(proj.id);
+            const updated = lastUpdatedFor(proj.id);
+            const staleDays = daysSince(updated);
+            const projActuals = actuals.filter(a => a.project_id === proj.id && a.trade_id === null);
+            const forecast = periods.reduce((o, p) => { o[p.key] = num(valueOf(proj.id, null, p.key)); return o; }, {});
+
+            return (
+              <div key={proj.id} className="mp-card">
+                <div className="mp-card-head" onClick={() => setExpanded(open ? null : proj.id)}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 15 }}>{proj.name}</div>
+                    <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", marginTop: 3,
+                      color: staleDays === null ? "#9A9381" : staleDays > 14 ? "#9A3C3C" : "#8A8270" }}>
+                      {staleDays === null ? "NEVER UPDATED" : staleDays === 0 ? "UPDATED TODAY" : `UPDATED ${staleDays}D AGO`}
+                      {access === "view" && " · VIEW ONLY"}
+                      {access === "request" && " · SUBMITS FOR APPROVAL"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    {periods.map(p => (
+                      <div key={p.key} style={{ textAlign: "right" }}>
+                        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 600, color: "#1B2A33" }}>
+                          {rollup.byProject[proj.id] ? rollup.byProject[proj.id].total[p.key] : 0}
+                        </div>
+                        <div style={{ fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: "#9A9381" }}>{p.short}</div>
+                      </div>
+                    ))}
+                    <span style={{ fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace" }}>{open ? "▲" : "▼"}</span>
+                  </div>
+                </div>
+
+                {open && (
+                  <div className="mp-card-body">
+                    <div style={{ overflowX: "auto" }}>
+                      <table className="mp-grid">
+                        <thead>
+                          <tr>
+                            <th>Line</th>
+                            {periods.map(p => <th key={p.key}>{p.label.toUpperCase()}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td style={{ fontWeight: 600, color: "#1B2A33" }}>Total</td>
+                            {periods.map(p => (
+                              <td key={p.key}>
+                                <input className="mp-num" inputMode="numeric" disabled={!editable}
+                                  value={valueOf(proj.id, null, p.key)}
+                                  onChange={e => setValue(proj.id, null, p.key, e.target.value)}
+                                  placeholder="0" />
+                              </td>
+                            ))}
+                          </tr>
+                          {trades.map(t => (
+                            <tr key={t.id}>
+                              <td>{t.name}</td>
+                              {periods.map(p => (
+                                <td key={p.key}>
+                                  <input className="mp-num" inputMode="numeric" disabled={!editable}
+                                    value={valueOf(proj.id, t.id, p.key)}
+                                    onChange={e => setValue(proj.id, t.id, p.key, e.target.value)}
+                                    placeholder="0" />
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                          <tr>
+                            <td style={{ color: "#8A8270" }}>Unspecified</td>
+                            {periods.map(p => {
+                              const u = unspecifiedFor(proj.id, p.key);
+                              return (
+                                <td key={p.key}>
+                                  <span className="mp-readonly" style={{ color: u < 0 ? "#9A3C3C" : "#8A8270", fontWeight: u < 0 ? 600 : 400 }}>{u}</span>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {overAllocated(proj.id) && (
+                      <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", border: "1px solid #C98787", borderRadius: 3, padding: "8px 12px", marginTop: 10 }}>
+                        Trade lines add up to more than the total. Raise the total or lower a trade line.
+                      </div>
+                    )}
+
+                    {editable && (
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+                        {dirty && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => clearDrafts(proj.id)}>Discard</button>}
+                        <button className="cb-btn" style={{ fontSize: 13, padding: "9px 16px" }}
+                          disabled={!dirty || saving || overAllocated(proj.id)}
+                          onClick={() => access === "request" ? submitProjectRequest(proj.id) : saveProject(proj.id)}>
+                          {saving ? "Saving…" : access === "request" ? "Submit for approval" : "Save"}
+                        </button>
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 18, borderTop: "1px solid #EDE9DC", paddingTop: 14 }}>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>HEADCOUNT OVER TIME</div>
+                      <ProjectTrendChart actuals={projActuals} forecast={forecast} periods={periods} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {newNameModal}
+        </div>
+      );
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  MAIN BOARD
+    // ══════════════════════════════════════════════════════════════════════════
+
     function CrewBoard({ user, role }) {
       const isOwner = isOwnerRole(role);
       const isAdmin = isManagerRole(role);
       const isEditor = isAdmin;
+      const [tab, setTab] = useState("roster");
       const [fullName, setFullName] = useState("");
       const [roster, setRoster] = useState([]);
       const [requests, setRequests] = useState([]);
@@ -515,12 +1424,8 @@
         return c;
       }, [withStatus]);
       const positions = useMemo(() => Array.from(new Set(withStatus.map(p => p.position).filter(Boolean))).sort(), [withStatus]);
-      const trades = useMemo(() => Array.from(new Set(withStatus.map(p => p.trade).filter(Boolean))).sort(), [withStatus]);
+      const rosterTrades = useMemo(() => Array.from(new Set(withStatus.map(p => p.trade).filter(Boolean))).sort(), [withStatus]);
 
-      // Manage Users visibility.
-      // The Owner sees everyone. An Admin sees only members — admin and owner
-      // accounts are the Owner's to manage, and the database now enforces that,
-      // so showing those rows to an Admin would only produce failed actions.
       const visibleUsers = useMemo(() => allUsers.filter(u => {
         if (isOwner) return true;
         if (u.role?.startsWith("hidden_")) return false;
@@ -568,7 +1473,7 @@
         // requester_id and status are pinned by the database insert policy —
         // they must match the signed-in user and 'pending' respectively.
         const { error } = await sb.from("requests").insert({
-          requester_id: user.id, requester_email: user.email,
+          kind: "roster", requester_id: user.id, requester_email: user.email,
           requester_full_name: fullName || null,
           action, payload: JSON.stringify(form), status: "pending",
           roster_id: form.id || null,
@@ -599,10 +1504,17 @@
       }
 
       async function notifyRequestResult(req, approved) {
-        const payload = JSON.parse(req.payload);
+        let payload = {};
+        try { payload = JSON.parse(req.payload); } catch (e) { payload = {}; }
         const { data: userRole } = await sb.from("user_roles").select("email, full_name").eq("user_id", req.requester_id).single();
         if (!userRole) return;
-        const actionLabel = req.action === "add" ? "add a new person" : req.action === "edit" ? `edit ${payload.name}` : `remove ${payload.name}`;
+        const kind = req.kind || "roster";
+        const actionLabel =
+          kind === "project"  ? `add the project ${payload.name}` :
+          kind === "trade"    ? `add the trade ${payload.name}` :
+          kind === "manpower" ? `update manpower for ${payload.project_name}` :
+          req.action === "add"  ? "add a new person" :
+          req.action === "edit" ? `edit ${payload.name}` : `remove ${payload.name}`;
         await sendEmail(userRole.email,
           approved ? "Change Request Approved — Crew Board" : "Change Request Rejected — Crew Board",
           approved
@@ -611,18 +1523,66 @@
         );
       }
 
-      async function approveRequest(req) {
-        const payload = JSON.parse(req.payload);
-        const data = { name: payload.name, position: payload.position || null, trade: payload.trade || null, current_project: payload.current_project || null, project_end: payload.project_end || null, next_project: payload.next_project || null, vacation_start: payload.vacation_start || null, vacation_end: payload.vacation_end || null, comments: payload.comments || null };
-        let error;
-        if (req.action === "add") ({ error } = await sb.from("roster").insert(data));
-        else if (req.action === "edit") {
-          if (!req.roster_id) { notify("Approve failed — no roster ID", "error"); return; }
-          ({ error } = await sb.from("roster").update(data).eq("id", req.roster_id));
-        } else if (req.action === "remove") {
-          if (!req.roster_id) { notify("Approve failed — no roster ID", "error"); return; }
-          ({ error } = await sb.from("roster").delete().eq("id", req.roster_id));
+      // Applies an approved manpower submission to the live record. The database
+      // triggers write both history logs from here, same as a direct save.
+      async function applyManpower(payload) {
+        const { data: existing } = await sb.from("manpower").select("*").eq("project_id", payload.project_id);
+        const cur = existing || [];
+        const updates = [], inserts = [];
+        (payload.rows || []).forEach(row => {
+          (payload.periods || []).forEach(p => {
+            const headcount = (row.values && row.values[p.key] != null) ? row.values[p.key] : 0;
+            const tradeId = row.trade_id == null ? null : row.trade_id;
+            const periodDate = p.date == null ? null : p.date;
+            const found = cur.find(x =>
+              (x.trade_id == null ? null : x.trade_id) === tradeId &&
+              (x.period_date == null ? null : x.period_date) === periodDate);
+            if (found) updates.push({ id: found.id, project_id: payload.project_id, trade_id: tradeId, period_date: periodDate, headcount });
+            else inserts.push({ project_id: payload.project_id, trade_id: tradeId, period_date: periodDate, headcount });
+          });
+        });
+        if (updates.length) {
+          const { error } = await sb.from("manpower").upsert(updates);
+          if (error) return error;
         }
+        if (inserts.length) {
+          const { error } = await sb.from("manpower").insert(inserts);
+          if (error) return error;
+        }
+        return null;
+      }
+
+      async function approveRequest(req) {
+        let payload = {};
+        try { payload = JSON.parse(req.payload); }
+        catch (e) { notify("Approve failed — the request payload is unreadable", "error"); return; }
+        const kind = req.kind || "roster";
+        let error = null;
+
+        if (kind === "project" || kind === "trade") {
+          const table = kind === "project" ? "projects" : "trades";
+          ({ error } = await sb.from(table).insert({
+            name: payload.name, status: "approved",
+            requested_by: req.requester_id, approved_at: new Date().toISOString(),
+          }));
+          if (error && error.code === "23505") {
+            notify(`A ${kind} named "${payload.name}" already exists — reject this request instead.`, "error");
+            return;
+          }
+        } else if (kind === "manpower") {
+          error = await applyManpower(payload);
+        } else {
+          const data = { name: payload.name, position: payload.position || null, trade: payload.trade || null, current_project: payload.current_project || null, project_end: payload.project_end || null, next_project: payload.next_project || null, vacation_start: payload.vacation_start || null, vacation_end: payload.vacation_end || null, comments: payload.comments || null };
+          if (req.action === "add") ({ error } = await sb.from("roster").insert(data));
+          else if (req.action === "edit") {
+            if (!req.roster_id) { notify("Approve failed — no roster ID", "error"); return; }
+            ({ error } = await sb.from("roster").update(data).eq("id", req.roster_id));
+          } else if (req.action === "remove") {
+            if (!req.roster_id) { notify("Approve failed — no roster ID", "error"); return; }
+            ({ error } = await sb.from("roster").delete().eq("id", req.roster_id));
+          }
+        }
+
         if (error) { notify("Approve failed: " + error.message, "error"); return; }
         await sb.from("requests").update({ status: "approved" }).eq("id", req.id);
         await notifyRequestResult(req, true);
@@ -654,15 +1614,22 @@
                 </div>
                 <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={signOut}>Sign out</button>
                 {isAdmin && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowUsers(!showUsers)}>{showUsers ? "Hide users" : "Manage users"}</button>}
-                {isEditor && <button className="cb-btn" onClick={() => setEditing({})}>+ Add</button>}
-                {!isEditor && <button className="cb-btn" onClick={() => setEditing({})}>+ Request</button>}
+                {tab === "roster" && (
+                  <button className="cb-btn" onClick={() => setEditing({})}>{isEditor ? "+ Add" : "+ Request"}</button>
+                )}
               </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="tab-strip">
+              <button className={"tab-btn" + (tab === "roster" ? " active" : "")} onClick={() => setTab("roster")}>Roster</button>
+              <button className={"tab-btn" + (tab === "manpower" ? " active" : "")} onClick={() => setTab("manpower")}>Manpower</button>
             </div>
 
             {/* Access Requests */}
             {isAdmin && visiblePendingUsers.length > 0 && (
               <div style={{ marginBottom: 24 }}>
-                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 16, textTransform: "uppercase", marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="section-title">
                   Access Requests
                   <span style={{ background: "#1F4E78", color: "#fff", borderRadius: 99, fontSize: 11, fontFamily: "'Inter', sans-serif", padding: "2px 8px" }}>{visiblePendingUsers.length}</span>
                 </div>
@@ -691,10 +1658,10 @@
             {/* Manage Users */}
             {isAdmin && showUsers && (
               <div style={{ marginBottom: 24 }}>
-                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 16, textTransform: "uppercase", marginBottom: 10 }}>All Users</div>
+                <div className="section-title">All Users</div>
                 {!isOwner && (
                   <div className="note-bar">
-                    List of Active Members
+                    Admin and Owner accounts are managed by the Owner and are not shown here.
                   </div>
                 )}
                 {visibleUsers.length === 0 ? (
@@ -728,96 +1695,101 @@
               </div>
             )}
 
-            {/* Stat counters */}
-            <div className="stat-grid">
-              {[{ key: "active", label: "On project" }, { key: "transitioning", label: "Wrapping up" }, { key: "available", label: "Available" }, { key: "vacation", label: "On vacation" }].map(s => {
-                const meta = STATUS_META[s.key];
-                const isActive = filter === s.key;
-                return (
-                  <button key={s.key} onClick={() => setFilter(isActive ? "all" : s.key)} style={{ textAlign: "left", cursor: "pointer", background: isActive ? meta.bg : "#FFFEFA", border: `1px solid ${isActive ? meta.border : "#D8D2BF"}`, borderLeft: `4px solid ${meta.border}`, borderRadius: 3, padding: "12px 14px" }}>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 600, color: meta.color }}>{String(counts[s.key]).padStart(2, "0")}</div>
-                    <div style={{ fontSize: 11, color: "#5A5444", marginTop: 2 }}>{s.label}</div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Position filter */}
-            {positions.length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 7 }}>FILTER BY POSITION</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  <button onClick={() => setPositionFilter("all")} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: positionFilter === "all" ? "#1B2A33" : "#FFFEFA", color: positionFilter === "all" ? "#F7F4EC" : "#5A5444", border: positionFilter === "all" ? "1px solid #1B2A33" : "1px solid #C9C2AC" }}>All</button>
-                  {positions.map(pos => (
-                    <button key={pos} onClick={() => setPositionFilter(positionFilter === pos ? "all" : pos)} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: positionFilter === pos ? "#1F4E78" : "#FFFEFA", color: positionFilter === pos ? "#F7F4EC" : "#5A5444", border: positionFilter === pos ? "1px solid #1F4E78" : "1px solid #C9C2AC" }}>
-                      {pos}<span style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}>{withStatus.filter(p => p.position === pos).length}</span>
-                    </button>
-                  ))}
+            {/* ── ROSTER TAB ─────────────────────────────────────────────── */}
+            {tab === "roster" && (
+              <React.Fragment>
+                <div className="stat-grid">
+                  {[{ key: "active", label: "On project" }, { key: "transitioning", label: "Wrapping up" }, { key: "available", label: "Available" }, { key: "vacation", label: "On vacation" }].map(s => {
+                    const meta = STATUS_META[s.key];
+                    const isActive = filter === s.key;
+                    return (
+                      <button key={s.key} onClick={() => setFilter(isActive ? "all" : s.key)} style={{ textAlign: "left", cursor: "pointer", background: isActive ? meta.bg : "#FFFEFA", border: `1px solid ${isActive ? meta.border : "#D8D2BF"}`, borderLeft: `4px solid ${meta.border}`, borderRadius: 3, padding: "12px 14px" }}>
+                        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 600, color: meta.color }}>{String(counts[s.key]).padStart(2, "0")}</div>
+                        <div style={{ fontSize: 11, color: "#5A5444", marginTop: 2 }}>{s.label}</div>
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
-            )}
 
-            {/* Trade filter */}
-            {trades.length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 7 }}>FILTER BY TRADE</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  <button onClick={() => setTradeFilter("all")} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: tradeFilter === "all" ? "#1B2A33" : "#FFFEFA", color: tradeFilter === "all" ? "#F7F4EC" : "#5A5444", border: tradeFilter === "all" ? "1px solid #1B2A33" : "1px solid #C9C2AC" }}>All</button>
-                  {trades.map(trade => (
-                    <button key={trade} onClick={() => setTradeFilter(tradeFilter === trade ? "all" : trade)} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: tradeFilter === trade ? "#3E6F5C" : "#FFFEFA", color: tradeFilter === trade ? "#F7F4EC" : "#5A5444", border: tradeFilter === trade ? "1px solid #3E6F5C" : "1px solid #C9C2AC" }}>
-                      {trade}<span style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}>{withStatus.filter(p => p.trade === trade).length}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Search */}
-            <div className="search-bar">
-              <input className="cb-input" placeholder="Search name, project, position or trade" value={query} onChange={e => setQuery(e.target.value)} />
-              {(filter !== "all" || positionFilter !== "all" || tradeFilter !== "all") && (
-                <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setFilter("all"); setPositionFilter("all"); setTradeFilter("all"); }}>Clear ×</button>
-              )}
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8A8270", marginLeft: "auto" }}>{loading ? "Loading…" : `${filtered.length} / ${roster.length}`}</span>
-            </div>
-
-            {/* Roster */}
-            {loading ? (
-              <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>Connecting to database…</div>
-            ) : filtered.length === 0 ? (
-              <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270" }}>{roster.length === 0 ? "No crew yet — add your first person." : "No one matches this filter."}</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {filtered.map(p => {
-                  const meta = STATUS_META[p.status];
-                  const du = daysUntil(p.project_end);
-                  return (
-                    <div key={p.id} className="roster-card" style={{ borderLeft: `4px solid ${meta.border}` }}>
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                          <span style={{ fontWeight: 600, fontSize: 15 }}>{p.name}</span>
-                          <span style={{ transform: "rotate(-2deg)", display: "inline-block", border: `1.5px solid ${meta.border}`, color: meta.color, fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 10, letterSpacing: "0.07em", padding: "2px 8px", borderRadius: 3, background: meta.bg }}>{meta.stamp}</span>
-                        </div>
-                        {p.position && <div style={{ fontSize: 12, color: "#1F4E78", marginTop: 2, fontWeight: 500 }}>{p.position}</div>}
-                        {p.trade && <div style={{ fontSize: 12, color: "#6B6354", marginTop: 1, fontFamily: "'JetBrains Mono', monospace" }}>{p.trade}</div>}
-                        {p.comments && <div style={{ fontSize: 12, color: "#7A7461", marginTop: 4, lineHeight: 1.4 }}>{p.comments}</div>}
-                      </div>
-                      <div style={{ fontSize: 13 }}>
-                        <div>
-                          <span style={{ color: "#8A8270" }}>Current: </span>{p.current_project || "—"}
-                          {p.project_end && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8A8270" }}>{" "}→ {fmt(p.project_end)}{du !== null ? ` (${du >= 0 ? du + "d" : "ended"})` : ""}</span>}
-                        </div>
-                        <div style={{ marginTop: 3 }}><span style={{ color: "#8A8270" }}>Next: </span>{p.next_project || "—"}</div>
-                        {p.vacation_start && p.vacation_end && <div style={{ marginTop: 3, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#7A3B3B" }}>Vacation {fmt(p.vacation_start)} – {fmt(p.vacation_end)}</div>}
-                      </div>
-                      <div className="card-actions">
-                        <button className="cb-btn-ghost" style={{ padding: "9px 12px", fontSize: 13 }} onClick={() => setEditing(p)}>{isEditor ? "Edit" : "Request edit"}</button>
-                        {isEditor && <button className="cb-btn-danger" style={{ padding: "9px 12px", fontSize: 13 }} onClick={() => setConfirmDelete(p)}>Remove</button>}
-                      </div>
+                {positions.length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 7 }}>FILTER BY POSITION</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      <button onClick={() => setPositionFilter("all")} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: positionFilter === "all" ? "#1B2A33" : "#FFFEFA", color: positionFilter === "all" ? "#F7F4EC" : "#5A5444", border: positionFilter === "all" ? "1px solid #1B2A33" : "1px solid #C9C2AC" }}>All</button>
+                      {positions.map(pos => (
+                        <button key={pos} onClick={() => setPositionFilter(positionFilter === pos ? "all" : pos)} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: positionFilter === pos ? "#1F4E78" : "#FFFEFA", color: positionFilter === pos ? "#F7F4EC" : "#5A5444", border: positionFilter === pos ? "1px solid #1F4E78" : "1px solid #C9C2AC" }}>
+                          {pos}<span style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}>{withStatus.filter(p => p.position === pos).length}</span>
+                        </button>
+                      ))}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                )}
+
+                {rosterTrades.length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 7 }}>FILTER BY TRADE</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      <button onClick={() => setTradeFilter("all")} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: tradeFilter === "all" ? "#1B2A33" : "#FFFEFA", color: tradeFilter === "all" ? "#F7F4EC" : "#5A5444", border: tradeFilter === "all" ? "1px solid #1B2A33" : "1px solid #C9C2AC" }}>All</button>
+                      {rosterTrades.map(trade => (
+                        <button key={trade} onClick={() => setTradeFilter(tradeFilter === trade ? "all" : trade)} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: tradeFilter === trade ? "#3E6F5C" : "#FFFEFA", color: tradeFilter === trade ? "#F7F4EC" : "#5A5444", border: tradeFilter === trade ? "1px solid #3E6F5C" : "1px solid #C9C2AC" }}>
+                          {trade}<span style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}>{withStatus.filter(p => p.trade === trade).length}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="search-bar">
+                  <input className="cb-input" placeholder="Search name, project, position or trade" value={query} onChange={e => setQuery(e.target.value)} />
+                  {(filter !== "all" || positionFilter !== "all" || tradeFilter !== "all") && (
+                    <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setFilter("all"); setPositionFilter("all"); setTradeFilter("all"); }}>Clear ×</button>
+                  )}
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8A8270", marginLeft: "auto" }}>{loading ? "Loading…" : `${filtered.length} / ${roster.length}`}</span>
+                </div>
+
+                {loading ? (
+                  <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>Connecting to database…</div>
+                ) : filtered.length === 0 ? (
+                  <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270" }}>{roster.length === 0 ? "No crew yet — add your first person." : "No one matches this filter."}</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {filtered.map(p => {
+                      const meta = STATUS_META[p.status];
+                      const du = daysUntil(p.project_end);
+                      return (
+                        <div key={p.id} className="roster-card" style={{ borderLeft: `4px solid ${meta.border}` }}>
+                          <div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                              <span style={{ fontWeight: 600, fontSize: 15 }}>{p.name}</span>
+                              <span style={{ transform: "rotate(-2deg)", display: "inline-block", border: `1.5px solid ${meta.border}`, color: meta.color, fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 10, letterSpacing: "0.07em", padding: "2px 8px", borderRadius: 3, background: meta.bg }}>{meta.stamp}</span>
+                            </div>
+                            {p.position && <div style={{ fontSize: 12, color: "#1F4E78", marginTop: 2, fontWeight: 500 }}>{p.position}</div>}
+                            {p.trade && <div style={{ fontSize: 12, color: "#6B6354", marginTop: 1, fontFamily: "'JetBrains Mono', monospace" }}>{p.trade}</div>}
+                            {p.comments && <div style={{ fontSize: 12, color: "#7A7461", marginTop: 4, lineHeight: 1.4 }}>{p.comments}</div>}
+                          </div>
+                          <div style={{ fontSize: 13 }}>
+                            <div>
+                              <span style={{ color: "#8A8270" }}>Current: </span>{p.current_project || "—"}
+                              {p.project_end && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8A8270" }}>{" "}→ {fmt(p.project_end)}{du !== null ? ` (${du >= 0 ? du + "d" : "ended"})` : ""}</span>}
+                            </div>
+                            <div style={{ marginTop: 3 }}><span style={{ color: "#8A8270" }}>Next: </span>{p.next_project || "—"}</div>
+                            {p.vacation_start && p.vacation_end && <div style={{ marginTop: 3, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#7A3B3B" }}>Vacation {fmt(p.vacation_start)} – {fmt(p.vacation_end)}</div>}
+                          </div>
+                          <div className="card-actions">
+                            <button className="cb-btn-ghost" style={{ padding: "9px 12px", fontSize: 13 }} onClick={() => setEditing(p)}>{isEditor ? "Edit" : "Request edit"}</button>
+                            {isEditor && <button className="cb-btn-danger" style={{ padding: "9px 12px", fontSize: 13 }} onClick={() => setConfirmDelete(p)}>Remove</button>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </React.Fragment>
+            )}
+
+            {/* ── MANPOWER TAB ───────────────────────────────────────────── */}
+            {tab === "manpower" && (
+              <ManpowerView user={user} role={role} notify={notify} onRequestSubmitted={load} />
             )}
 
             <div style={{ marginTop: 32, fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace" }}>
