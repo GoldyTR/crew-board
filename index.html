@@ -14,12 +14,13 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { margin: 0; background: #F7F4EC; background-image: linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px); background-size: 28px 28px; }
-    .cb-input, .cb-textarea {
+    .cb-input, .cb-textarea, .cb-select {
       font-family: 'Inter', sans-serif; font-size: 14px;
       border: 1px solid #C9C2AC; background: #FFFEFA; color: #1B2A33;
       border-radius: 3px; padding: 10px 12px; width: 100%; -webkit-appearance: none;
     }
-    .cb-input:focus, .cb-textarea:focus { outline: 2px solid #1F4E78; outline-offset: 1px; }
+    .cb-select { -webkit-appearance: menulist; padding: 8px 10px; }
+    .cb-input:focus, .cb-textarea:focus, .cb-select:focus { outline: 2px solid #1F4E78; outline-offset: 1px; }
     .cb-btn {
       font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px;
       border-radius: 3px; border: 1px solid #1B2A33; background: #1B2A33;
@@ -94,11 +95,16 @@
     }
     .note-bar {
       font-size: 12px; color: #6B6354; background: #EFEBDD; border: 1px solid #D8D2BF;
-      border-radius: 3px; padding: 8px 12px; margin-bottom: 10px;
+      border-radius: 3px; padding: 8px 12px; margin-bottom: 10px; line-height: 1.5;
     }
     .section-title {
       font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 16px;
       text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 10px;
+    }
+    .edited-chip {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em;
+      color: #A4621A; background: #F6E9D6; border: 1px solid #C9821F;
+      border-radius: 3px; padding: 2px 7px;
     }
     /* Tabs */
     .tab-strip { display: flex; gap: 2px; border-bottom: 2px solid #1B2A33; margin-bottom: 20px; }
@@ -155,6 +161,10 @@
       border-radius: 3px; padding: 12px 16px; margin-bottom: 8px; font-size: 13px;
     }
     .move-card.hire { border-left-color: #C9821F; }
+    .trade-toggle {
+      font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
+      padding: 5px 12px; border-radius: 99px; cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -182,6 +192,8 @@
       console.log("Email notification (not sent — server-side function needed):", { to, subject });
     }
 
+    const clone = (o) => JSON.parse(JSON.stringify(o));
+
     // ── Date helpers ──────────────────────────────────────────────────────────
 
     function isoDate(d) {
@@ -189,13 +201,8 @@
       return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
     }
 
-    function endOfMonth(year, monthIndex) {
-      return new Date(year, monthIndex + 1, 0);
-    }
-
-    function monthLabel(d) {
-      return d.toLocaleDateString("en-CA", { month: "long" });
-    }
+    function endOfMonth(year, monthIndex) { return new Date(year, monthIndex + 1, 0); }
+    function monthLabel(d) { return d.toLocaleDateString("en-CA", { month: "long" }); }
 
     // Two forecast buckets: end of this month and end of next.
     // When fewer than 7 days remain in the current month the window rolls
@@ -250,6 +257,9 @@
       return new Date(d + "T00:00:00").toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
     }
 
+    const numOf = (v) => { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; };
+    const digitsOnly = (v) => v === "" || /^\d{0,5}$/.test(v);
+
     // ── Shared inputs ─────────────────────────────────────────────────────────
 
     function PasswordField({ label, value, onChange, placeholder, onKeyDown }) {
@@ -290,6 +300,65 @@
     function Toast({ message, type, onDone }) {
       useEffect(() => { const t = setTimeout(onDone, type === "error" ? 5000 : 2800); return () => clearTimeout(t); }, []);
       return <div className={`toast${type === "error" ? " error" : ""}`}>{message}</div>;
+    }
+
+    // Editable grid of Total + trade lines across the period columns.
+    // Shared by the request modal and the approver's review panel.
+    function ManpowerGrid({ rows, periods, onChange, disabled }) {
+      const unspecified = (pKey) => {
+        const total = numOf((rows.find(r => r.trade_id === null) || { values: {} }).values[pKey]);
+        const detail = rows.filter(r => r.trade_id !== null)
+          .reduce((s, r) => s + numOf(r.values[pKey]), 0);
+        return total - detail;
+      };
+      return (
+        <div style={{ overflowX: "auto" }}>
+          <table className="mp-grid">
+            <thead>
+              <tr>
+                <th>Line</th>
+                {periods.map(p => <th key={p.key}>{(p.label || "").toUpperCase()}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={row.trade_id === null ? "total" : row.trade_id}>
+                  <td style={row.trade_id === null ? { fontWeight: 600, color: "#1B2A33" } : null}>{row.label}</td>
+                  {periods.map(p => (
+                    <td key={p.key}>
+                      <input className="mp-num" inputMode="numeric" disabled={disabled}
+                        value={row.values[p.key] === undefined ? "" : String(row.values[p.key])}
+                        onChange={e => { if (digitsOnly(e.target.value)) onChange(ri, p.key, e.target.value); }}
+                        placeholder="0" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {rows.length > 1 && (
+                <tr>
+                  <td style={{ color: "#8A8270" }}>Unspecified</td>
+                  {periods.map(p => {
+                    const u = unspecified(p.key);
+                    return (
+                      <td key={p.key}>
+                        <span className="mp-readonly" style={{ color: u < 0 ? "#9A3C3C" : "#8A8270", fontWeight: u < 0 ? 600 : 400 }}>{u}</span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    function gridOverAllocated(rows, periods) {
+      return periods.some(p => {
+        const total = numOf((rows.find(r => r.trade_id === null) || { values: {} }).values[p.key]);
+        const detail = rows.filter(r => r.trade_id !== null).reduce((s, r) => s + numOf(r.values[p.key]), 0);
+        return detail > total;
+      });
     }
 
     // ── Login Screen ──────────────────────────────────────────────────────────
@@ -451,28 +520,25 @@
       project_end: "Project end", next_project: "Next project",
       vacation_start: "Vacation start", vacation_end: "Vacation end", comments: "Comments",
     };
+    const ROSTER_FIELDS = ["name","position","trade","current_project","project_end","next_project","vacation_start","vacation_end","comments"];
+    const DATE_FIELDS = ["project_end", "vacation_start", "vacation_end"];
 
-    function DiffRow({ label, current, requested }) {
-      const changed = (current || "") !== (requested || "") && requested;
-      return (
-        <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 1fr", gap: 8, fontSize: 12, padding: "5px 0", borderBottom: "1px solid #EDE9DC" }}>
-          <div style={{ color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{label}</div>
-          <div style={{ color: "#5A5444" }}>{current || <span style={{ color: "#C9C2AC" }}>—</span>}</div>
-          <div style={{ color: changed ? "#A4621A" : "#5A5444", background: changed ? "#FDF3E3" : "transparent", borderRadius: 3, padding: changed ? "1px 6px" : 0, fontWeight: changed ? 600 : 400, border: changed ? "1px solid #C9821F" : "none" }}>
-            {requested || <span style={{ color: "#C9C2AC" }}>—</span>}
-          </div>
-        </div>
-      );
-    }
-
+    // The approver reviews and, where needed, corrects before approving. What
+    // gets applied is the corrected version; requests.payload keeps the original
+    // submission, so the record of what was asked for survives.
     function RequestCard({ r, roster, onApprove, onReject }) {
       const [expanded, setExpanded] = useState(false);
-      let payload = {};
-      try { payload = JSON.parse(r.payload); } catch (e) { payload = {}; }
+      const original = useMemo(() => {
+        try { return JSON.parse(r.payload); } catch (e) { return {}; }
+      }, [r.payload]);
+      const [draft, setDraft] = useState(() => clone(original));
+
+      useEffect(() => { setDraft(clone(original)); }, [original]);
+
       const kind = r.kind || "roster";
       const current = roster.find(p => p.id === r.roster_id) || {};
-      const fields = ["name","position","trade","current_project","project_end","next_project","vacation_start","vacation_end","comments"];
       const requesterName = r.requester_full_name || r.requester_email;
+      const edited = JSON.stringify(draft) !== JSON.stringify(original);
 
       const KIND_ICON = { manpower: "📊", project: "🏗", trade: "🔧" };
       const actionIcon = kind === "roster"
@@ -480,10 +546,21 @@
         : KIND_ICON[kind];
 
       const headline =
-        kind === "project"  ? <span>requested a new project <strong>{payload.name}</strong></span> :
-        kind === "trade"    ? <span>requested a new trade <strong>{payload.name}</strong></span> :
-        kind === "manpower" ? <span>submitted manpower for <strong>{payload.project_name}</strong></span> :
-        <span>requested to {r.action === "add" ? "add" : r.action === "edit" ? "edit" : "remove"} <strong>{payload.name}</strong></span>;
+        kind === "project"  ? <span>requested a new project <strong>{original.name}</strong></span> :
+        kind === "trade"    ? <span>requested a new trade <strong>{original.name}</strong></span> :
+        kind === "manpower" ? <span>submitted manpower for <strong>{original.project_name}</strong></span> :
+        <span>requested to {r.action === "add" ? "add" : r.action === "edit" ? "edit" : "remove"} <strong>{original.name}</strong></span>;
+
+      const hasGrid = (kind === "manpower" || kind === "project") && Array.isArray(draft.rows);
+      const overAlloc = hasGrid && gridOverAllocated(draft.rows, draft.periods || []);
+
+      function setGridValue(rowIndex, periodKey, value) {
+        setDraft(d => {
+          const next = clone(d);
+          next.rows[rowIndex].values[periodKey] = value === "" ? "" : numOf(value);
+          return next;
+        });
+      }
 
       return (
         <div>
@@ -496,91 +573,100 @@
               </div>
             </div>
             <span style={{ fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
-              {expanded ? "▲ Hide" : "▼ View"}
+              {expanded ? "▲ Hide" : "▼ Review"}
             </span>
           </div>
 
           {expanded && (
             <div className="req-detail">
-              <div style={{ fontSize: 12, color: "#7A7461", marginBottom: 12 }}>
-                Requested by <strong>{requesterName}</strong>
-                {r.requester_full_name && <span style={{ fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace", marginLeft: 8 }}>{r.requester_email}</span>}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, color: "#7A7461" }}>
+                  Requested by <strong>{requesterName}</strong>
+                  {r.requester_full_name && <span style={{ fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace", marginLeft: 8 }}>{r.requester_email}</span>}
+                </div>
+                {edited && <span className="edited-chip">EDITED BY YOU</span>}
+              </div>
+
+              <div className="note-bar">
+                You can correct anything below before approving. What gets saved is what
+                you see here; the original submission stays on the request.
               </div>
 
               {(kind === "project" || kind === "trade") && (
                 <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 13, marginBottom: 8 }}>
-                    New {kind} name: <strong style={{ color: "#3E6F5C" }}>{payload.name}</strong>
-                  </div>
-                  <div className="note-bar" style={{ marginBottom: 0 }}>
-                    Check the spelling before approving. Once approved this becomes the name
-                    everyone selects, and the rollup groups on it.
-                  </div>
+                  <Field label={kind + " name"}>
+                    <input className="cb-input" value={draft.name || ""}
+                      onChange={e => setDraft(Object.assign({}, draft, { name: e.target.value }))} />
+                  </Field>
+                  {kind === "project" && hasGrid && (
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>
+                        STARTING MANPOWER
+                      </div>
+                      <ManpowerGrid rows={draft.rows} periods={draft.periods || []} onChange={setGridValue} />
+                    </div>
+                  )}
                 </div>
               )}
 
-              {kind === "manpower" && (
-                <div style={{ marginBottom: 12, overflowX: "auto" }}>
-                  <table className="mp-grid">
-                    <thead>
-                      <tr>
-                        <th>Line</th>
-                        {(payload.periods || []).map(p => <th key={p.key}>{(p.label || "").toUpperCase()}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(payload.rows || []).map((row, i) => (
-                        <tr key={i}>
-                          <td>{row.label}</td>
-                          {(payload.periods || []).map(p => (
-                            <td key={p.key}>
-                              <span className="mp-readonly" style={{ color: "#3E6F5C", fontWeight: 600 }}>
-                                {row.values ? (row.values[p.key] ?? 0) : 0}
-                              </span>
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {kind === "manpower" && hasGrid && (
+                <div style={{ marginBottom: 12 }}>
+                  <ManpowerGrid rows={draft.rows} periods={draft.periods || []} onChange={setGridValue} />
                 </div>
               )}
 
               {kind === "roster" && r.action === "remove" && (
                 <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", padding: "8px 12px", borderRadius: 3, marginBottom: 12 }}>
-                  This will permanently remove <strong>{payload.name}</strong> from the board.
+                  This will permanently remove <strong>{original.name}</strong> from the board.
                 </div>
               )}
 
-              {kind === "roster" && r.action === "add" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 0, marginBottom: 12 }}>
-                  {fields.filter(f => payload[f]).map(f => (
-                    <div key={f} style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: 8, fontSize: 12, padding: "5px 0", borderBottom: "1px solid #EDE9DC" }}>
-                      <div style={{ color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{FIELD_LABELS[f]}</div>
-                      <div style={{ color: "#3E6F5C", fontWeight: 500 }}>{payload[f]}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {kind === "roster" && r.action === "edit" && (
+              {kind === "roster" && r.action !== "remove" && (
                 <div style={{ marginBottom: 12 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 1fr", gap: 8, marginBottom: 4 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "96px 1fr 1fr", gap: 8, marginBottom: 6 }}>
                     <div></div>
-                    <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>CURRENT</div>
+                    <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>
+                      {r.action === "edit" ? "CURRENT" : ""}
+                    </div>
                     <div style={{ fontSize: 11, color: "#A4621A", fontFamily: "'JetBrains Mono', monospace" }}>REQUESTED</div>
                   </div>
-                  {fields.map(f => {
+                  {ROSTER_FIELDS.map(f => {
                     const cur = current[f] || "";
-                    const req = payload[f] || "";
-                    if (!cur && !req) return null;
-                    return <DiffRow key={f} label={FIELD_LABELS[f]} current={cur} requested={req} />;
+                    const req = draft[f] || "";
+                    if (r.action === "edit" && !cur && !req) return null;
+                    const changed = r.action === "edit" && (cur || "") !== (req || "");
+                    return (
+                      <div key={f} style={{ display: "grid", gridTemplateColumns: "96px 1fr 1fr", gap: 8, alignItems: "center", padding: "3px 0" }}>
+                        <div style={{ color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{FIELD_LABELS[f]}</div>
+                        <div style={{ fontSize: 12, color: "#5A5444" }}>
+                          {r.action === "edit" ? (cur || <span style={{ color: "#C9C2AC" }}>—</span>) : null}
+                        </div>
+                        <input className="cb-input"
+                          type={DATE_FIELDS.indexOf(f) >= 0 ? "date" : "text"}
+                          style={{
+                            fontSize: 12, padding: "6px 9px",
+                            borderColor: changed ? "#C9821F" : "#C9C2AC",
+                            background: changed ? "#FDF3E3" : "#FFFEFA",
+                          }}
+                          value={draft[f] || ""}
+                          onChange={e => setDraft(Object.assign({}, draft, { [f]: e.target.value }))} />
+                      </div>
+                    );
                   })}
                 </div>
               )}
 
-              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
-                <button className="cb-btn-approve" onClick={() => onApprove(r)}>Approve</button>
+              {overAlloc && (
+                <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", border: "1px solid #C98787", borderRadius: 3, padding: "8px 12px", marginBottom: 12 }}>
+                  Trade lines add up to more than the total. Correct that before approving.
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
+                {edited && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "8px 14px" }} onClick={() => setDraft(clone(original))}>Reset changes</button>}
+                <button className="cb-btn-approve" disabled={overAlloc} onClick={() => onApprove(r, draft)}>
+                  {edited ? "Approve with edits" : "Approve"}
+                </button>
                 <button className="cb-btn-danger" style={{ padding: "8px 14px", fontSize: 13 }} onClick={() => onReject(r.id, r)}>Reject</button>
               </div>
             </div>
@@ -608,7 +694,6 @@
     //  MANPOWER
     // ══════════════════════════════════════════════════════════════════════════
 
-    // Grouped bars: one group per period, one bar per trade plus Unspecified.
     function AggregateChart({ rollup, periods, trades }) {
       const W = 640, H = 190, padL = 46, padB = 34, padT = 14, padR = 10;
       const rows = trades.map(t => ({
@@ -621,7 +706,7 @@
       const plotW = W - padL - padR, plotH = H - padB - padT;
       const groupW = plotW / periods.length;
       const barW = Math.min(46, (groupW - 16) / Math.max(1, rows.length));
-      const COLORS = ["#1F4E78", "#3E6F5C", "#C9821F", "#7A3B3B", "#5A5444"];
+      const COLORS = ["#1F4E78", "#3E6F5C", "#C9821F", "#7A3B3B", "#5A5444", "#2E6394"];
 
       return (
         <div style={{ overflowX: "auto" }}>
@@ -674,7 +759,6 @@
       );
     }
 
-    // Actual headcount over time for one project, with the forecast dashed on the end.
     function ProjectTrendChart({ actuals, forecast, periods }) {
       const hist = actuals.slice().sort((a, b) => String(a.recorded_on).localeCompare(String(b.recorded_on)));
       const points = hist.map(a => ({ label: a.recorded_on, value: a.headcount, actual: true }));
@@ -694,7 +778,6 @@
       const xAt = i => padL + (i / (points.length - 1)) * plotW;
       const yAt = v => padT + plotH - (v / max) * plotH;
       const lastActual = points.filter(p => p.actual).length - 1;
-
       const solid = points.slice(0, lastActual + 1).map((p, i) => `${xAt(i)},${yAt(p.value)}`).join(" ");
       const from = Math.max(0, lastActual);
       const dashed = points.slice(from).map((p, i) => `${xAt(i + from)},${yAt(p.value)}`).join(" ");
@@ -727,6 +810,98 @@
       );
     }
 
+    // New-project request: name plus the trades that apply and their starting numbers.
+    function ProjectRequestModal({ trades, periods, saving, onCancel, onSubmit }) {
+      const [name, setName] = useState("");
+      const [picked, setPicked] = useState([]);
+      const [values, setValues] = useState({}); // "total"|tradeId -> { periodKey: value }
+
+      const rowsFor = () => {
+        const mk = (label, tradeId) => ({
+          label, trade_id: tradeId,
+          values: periods.reduce((o, p) => {
+            o[p.key] = numOf((values[tradeId === null ? "total" : tradeId] || {})[p.key]);
+            return o;
+          }, {}),
+        });
+        return [mk("Total", null)].concat(picked.map(id => {
+          const t = trades.find(x => x.id === id);
+          return mk(t ? t.name : "Trade " + id, id);
+        }));
+      };
+
+      const gridRows = rowsFor();
+      const over = gridOverAllocated(gridRows, periods);
+
+      function setVal(rowIndex, periodKey, v) {
+        const row = gridRows[rowIndex];
+        const key = row.trade_id === null ? "total" : row.trade_id;
+        setValues(s => Object.assign({}, s, { [key]: Object.assign({}, s[key], { [periodKey]: v }) }));
+      }
+
+      return (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()}>
+          <div className="modal-box" style={{ maxWidth: 560 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 14 }}>
+              Request new project
+            </div>
+            <Field label="Project name">
+              <input className="cb-input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Dry Creek WTP" />
+            </Field>
+            <div style={{ fontSize: 12, color: "#7A7461", marginTop: 8, lineHeight: 1.5 }}>
+              Spell it exactly as it should appear everywhere. An Admin checks the name and
+              can correct these numbers before approving.
+            </div>
+
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>
+                TRADES ON THIS PROJECT
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {trades.map(t => {
+                  const on = picked.indexOf(t.id) >= 0;
+                  return (
+                    <button key={t.id} className="trade-toggle"
+                      onClick={() => setPicked(on ? picked.filter(x => x !== t.id) : picked.concat([t.id]))}
+                      style={{
+                        background: on ? "#3E6F5C" : "#FFFEFA", color: on ? "#F7F4EC" : "#5A5444",
+                        border: on ? "1px solid #3E6F5C" : "1px solid #C9C2AC",
+                      }}>
+                      {on ? "✓ " : "+ "}{t.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 12, color: "#7A7461", marginTop: 8 }}>
+                Pick only the trades this project actually uses. More can be added later.
+              </div>
+            </div>
+
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>
+                MANPOWER
+              </div>
+              <ManpowerGrid rows={gridRows} periods={periods} onChange={setVal} />
+            </div>
+
+            {over && (
+              <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", border: "1px solid #C98787", borderRadius: 3, padding: "8px 12px", marginTop: 12 }}>
+                Trade lines add up to more than the total.
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+              <button className="cb-btn-ghost" onClick={onCancel}>Cancel</button>
+              <button className="cb-btn" disabled={!name.trim() || saving || over}
+                onClick={() => onSubmit(name.trim(), gridRows)}>
+                {saving ? "Submitting…" : "Submit request"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function ManpowerView({ user, role, notify, onRequestSubmitted }) {
       const isOwner = isOwnerRole(role);
       const isAdmin = isManagerRole(role);
@@ -741,9 +916,11 @@
       const [loading, setLoading] = useState(true);
       const [expanded, setExpanded] = useState(null);
       const [drafts, setDrafts] = useState({});
+      const [addedTrades, setAddedTrades] = useState({}); // projectId -> [tradeId]
       const [saving, setSaving] = useState(false);
-      const [askNew, setAskNew] = useState(null); // 'project' | 'trade'
-      const [newName, setNewName] = useState("");
+      const [showProjectModal, setShowProjectModal] = useState(false);
+      const [askTrade, setAskTrade] = useState(false);
+      const [newTradeName, setNewTradeName] = useState("");
       const [showAssign, setShowAssign] = useState(false);
 
       const periods = useMemo(() => computePeriods(), []);
@@ -788,9 +965,7 @@
         [assignments, user.id]
       );
 
-      // Mirrors can_write_manpower() in the database. Managers always write
-      // directly; an assigned member writes directly only while the owner's
-      // approval toggle is off, and otherwise submits a request.
+      // Mirrors can_write_manpower() in the database.
       function accessFor(projectId) {
         if (isAdmin) return "write";
         if (!myProjectIds.has(projectId)) return "view";
@@ -800,11 +975,26 @@
       const cell = useCallback((projectId, tradeId, periodKey) => {
         return rows.find(x =>
           x.project_id === projectId &&
-          (x.trade_id === undefined ? null : x.trade_id) === (tradeId === undefined ? null : tradeId) &&
+          (x.trade_id == null ? null : x.trade_id) === (tradeId == null ? null : tradeId) &&
           (x.period_date || "now") === periodKey) || null;
       }, [rows]);
 
-      const draftKey = (projectId, tradeId, periodKey) => `${projectId}|${tradeId === null ? "T" : tradeId}|${periodKey}`;
+      // A trade is "on" a project when a manpower row exists for it. Newly added
+      // trades live in local state until the first save creates those rows.
+      const tradesOn = useCallback((projectId) => {
+        const ids = new Set();
+        rows.forEach(r => { if (r.project_id === projectId && r.trade_id != null) ids.add(r.trade_id); });
+        (addedTrades[projectId] || []).forEach(id => ids.add(id));
+        return trades.filter(t => ids.has(t.id));
+      }, [rows, trades, addedTrades]);
+
+      const activeTrades = useMemo(() => {
+        const ids = new Set();
+        rows.forEach(r => { if (r.trade_id != null) ids.add(r.trade_id); });
+        return trades.filter(t => ids.has(t.id));
+      }, [rows, trades]);
+
+      const draftKey = (projectId, tradeId, periodKey) => `${projectId}|${tradeId == null ? "T" : tradeId}|${periodKey}`;
 
       function valueOf(projectId, tradeId, periodKey) {
         const k = draftKey(projectId, tradeId, periodKey);
@@ -814,19 +1004,19 @@
       }
 
       function setValue(projectId, tradeId, periodKey, v) {
-        if (v !== "" && !/^\d{0,5}$/.test(v)) return;
+        if (!digitsOnly(v)) return;
         setDrafts(d => Object.assign({}, d, { [draftKey(projectId, tradeId, periodKey)]: v }));
       }
 
-      const num = (v) => { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; };
-
       function unspecifiedFor(projectId, periodKey) {
-        const total = num(valueOf(projectId, null, periodKey));
-        const detailed = trades.reduce((s, t) => s + num(valueOf(projectId, t.id, periodKey)), 0);
+        const total = numOf(valueOf(projectId, null, periodKey));
+        const detailed = tradesOn(projectId).reduce((s, t) => s + numOf(valueOf(projectId, t.id, periodKey)), 0);
         return total - detailed;
       }
 
-      const projectDirty = (projectId) => Object.keys(drafts).some(k => k.indexOf(projectId + "|") === 0);
+      const projectDirty = (projectId) =>
+        Object.keys(drafts).some(k => k.indexOf(projectId + "|") === 0) ||
+        (addedTrades[projectId] || []).length > 0;
       const overAllocated = (projectId) => periods.some(p => unspecifiedFor(projectId, p.key) < 0);
 
       function lastUpdatedFor(projectId) {
@@ -841,19 +1031,32 @@
           Object.keys(next).forEach(k => { if (k.indexOf(projectId + "|") === 0) delete next[k]; });
           return next;
         });
+        setAddedTrades(a => Object.assign({}, a, { [projectId]: [] }));
+      }
+
+      function addTradeToProject(projectId, tradeId) {
+        setAddedTrades(a => Object.assign({}, a, {
+          [projectId]: (a[projectId] || []).concat([tradeId]),
+        }));
+        // Seed zeros so the row saves even if left untouched.
+        periods.forEach(p => {
+          const k = draftKey(projectId, tradeId, p.key);
+          setDrafts(d => (k in d) ? d : Object.assign({}, d, { [k]: "0" }));
+        });
       }
 
       // ── Save ────────────────────────────────────────────────────────────────
 
       function collectCells(projectId) {
         const out = [];
-        [null].concat(trades.map(t => t.id)).forEach(tradeId => {
+        const ids = [null].concat(tradesOn(projectId).map(t => t.id));
+        ids.forEach(tradeId => {
           periods.forEach(p => {
             const k = draftKey(projectId, tradeId, p.key);
             if (!(k in drafts)) return;
             out.push({
               project_id: projectId, trade_id: tradeId, period_date: p.date,
-              headcount: num(drafts[k]), existing: cell(projectId, tradeId, p.key),
+              headcount: numOf(drafts[k]), existing: cell(projectId, tradeId, p.key),
             });
           });
         });
@@ -894,20 +1097,20 @@
         load();
       }
 
+      function buildPayloadRows(projectId) {
+        const mk = (label, tradeId) => ({
+          label, trade_id: tradeId,
+          values: periods.reduce((o, p) => { o[p.key] = numOf(valueOf(projectId, tradeId, p.key)); return o; }, {}),
+        });
+        return [mk("Total", null)].concat(tradesOn(projectId).map(t => mk(t.name, t.id)));
+      }
+
       async function submitProjectRequest(projectId) {
         if (overAllocated(projectId)) {
           notify("Trade lines add up to more than the total — fix that first.", "error");
           return;
         }
         const project = projects.find(p => p.id === projectId);
-        const bodyRows = [{
-          label: "Total", trade_id: null,
-          values: periods.reduce((o, p) => { o[p.key] = num(valueOf(projectId, null, p.key)); return o; }, {}),
-        }].concat(trades.map(t => ({
-          label: t.name, trade_id: t.id,
-          values: periods.reduce((o, p) => { o[p.key] = num(valueOf(projectId, t.id, p.key)); return o; }, {}),
-        })));
-
         setSaving(true);
         const { error } = await sb.from("requests").insert({
           kind: "manpower", action: "edit", status: "pending",
@@ -916,7 +1119,7 @@
             project_id: projectId,
             project_name: project ? project.name : "",
             periods: periods.map(p => ({ key: p.key, date: p.date, label: p.label })),
-            rows: bodyRows,
+            rows: buildPayloadRows(projectId),
           }),
         });
         setSaving(false);
@@ -926,20 +1129,37 @@
         if (onRequestSubmitted) onRequestSubmitted();
       }
 
-      async function submitNewName() {
-        const name = newName.trim();
+      async function submitNewProject(name, gridRows) {
+        setSaving(true);
+        const { error } = await sb.from("requests").insert({
+          kind: "project", action: "add", status: "pending",
+          requester_id: user.id, requester_email: user.email,
+          payload: JSON.stringify({
+            name,
+            periods: periods.map(p => ({ key: p.key, date: p.date, label: p.label })),
+            rows: gridRows,
+          }),
+        });
+        setSaving(false);
+        if (error) { notify("Request failed: " + error.message, "error"); return; }
+        setShowProjectModal(false);
+        notify("New project submitted for approval");
+        if (onRequestSubmitted) onRequestSubmitted();
+      }
+
+      async function submitNewTrade() {
+        const name = newTradeName.trim();
         if (!name) return;
         setSaving(true);
         const { error } = await sb.from("requests").insert({
-          kind: askNew, action: "add", status: "pending",
+          kind: "trade", action: "add", status: "pending",
           requester_id: user.id, requester_email: user.email,
           payload: JSON.stringify({ name }),
         });
         setSaving(false);
         if (error) { notify("Request failed: " + error.message, "error"); return; }
-        const what = askNew;
-        setAskNew(null); setNewName("");
-        notify(`New ${what} submitted for approval`);
+        setAskTrade(false); setNewTradeName("");
+        notify("New trade submitted for approval");
         if (onRequestSubmitted) onRequestSubmitted();
       }
 
@@ -970,18 +1190,18 @@
 
       const rollup = useMemo(() => {
         const byTrade = {}, unspecified = {}, byProject = {};
-        trades.forEach(t => { byTrade[t.id] = {}; periods.forEach(p => { byTrade[t.id][p.key] = 0; }); });
+        activeTrades.forEach(t => { byTrade[t.id] = {}; periods.forEach(p => { byTrade[t.id][p.key] = 0; }); });
         periods.forEach(p => { unspecified[p.key] = 0; });
 
         projects.forEach(proj => {
           byProject[proj.id] = { total: {}, trades: {} };
-          trades.forEach(t => { byProject[proj.id].trades[t.id] = {}; });
+          activeTrades.forEach(t => { byProject[proj.id].trades[t.id] = {}; });
           periods.forEach(p => {
-            const totalCell = cell(proj.id, null, p.key);
-            const total = totalCell ? totalCell.headcount : 0;
+            const tc = cell(proj.id, null, p.key);
+            const total = tc ? tc.headcount : 0;
             byProject[proj.id].total[p.key] = total;
             let detailed = 0;
-            trades.forEach(t => {
+            activeTrades.forEach(t => {
               const c = cell(proj.id, t.id, p.key);
               const v = c ? c.headcount : 0;
               byProject[proj.id].trades[t.id][p.key] = v;
@@ -992,14 +1212,12 @@
           });
         });
         return { byTrade, unspecified, byProject };
-      }, [projects, trades, periods, cell]);
+      }, [projects, activeTrades, periods, cell]);
 
-      // For each trade and forecast period: who is releasing, who needs more,
-      // and how much of the need transfers rather than being hired.
       const moves = useMemo(() => {
         const out = [];
         periods.slice(1).forEach(p => {
-          trades.forEach(t => {
+          activeTrades.forEach(t => {
             const releasing = [], needing = [];
             projects.forEach(proj => {
               const tr = rollup.byProject[proj.id] ? rollup.byProject[proj.id].trades[t.id] : null;
@@ -1013,7 +1231,6 @@
             const totalRel = releasing.reduce((s, r) => s + r.count, 0);
             const totalNeed = needing.reduce((s, r) => s + r.count, 0);
 
-            // Greedy pairing, biggest release against biggest need.
             const pool = releasing.map(r => Object.assign({}, r)).sort((a, b) => b.count - a.count);
             const want = needing.map(r => Object.assign({}, r)).sort((a, b) => b.count - a.count);
             const transfers = [];
@@ -1034,7 +1251,7 @@
           });
         });
         return out;
-      }, [projects, trades, periods, rollup]);
+      }, [projects, activeTrades, periods, rollup]);
 
       const coverage = useMemo(() => {
         let total = 0, detailed = 0;
@@ -1042,29 +1259,26 @@
           const bp = rollup.byProject[proj.id];
           if (!bp) return;
           total += bp.total["now"] || 0;
-          trades.forEach(t => { detailed += (bp.trades[t.id] || {})["now"] || 0; });
+          activeTrades.forEach(t => { detailed += (bp.trades[t.id] || {})["now"] || 0; });
         });
         return total === 0 ? null : Math.round((detailed / total) * 100);
-      }, [projects, trades, rollup]);
+      }, [projects, activeTrades, rollup]);
 
-      const newNameModal = askNew && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setAskNew(null)}>
+      const tradeModal = askTrade && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setAskTrade(false)}>
           <div className="modal-box" style={{ maxWidth: 400 }}>
-            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 14 }}>
-              Request new {askNew}
-            </div>
-            <Field label={askNew + " name"}>
-              <input className="cb-input" value={newName} onChange={e => setNewName(e.target.value)}
-                placeholder={askNew === "project" ? "e.g. Dry Creek WTP" : "e.g. Pipefitters"}
-                onKeyDown={e => e.key === "Enter" && submitNewName()} />
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 14 }}>Request new trade</div>
+            <Field label="Trade name">
+              <input className="cb-input" value={newTradeName} onChange={e => setNewTradeName(e.target.value)}
+                placeholder="e.g. Pipefitters" onKeyDown={e => e.key === "Enter" && submitNewTrade()} />
             </Field>
             <div style={{ fontSize: 12, color: "#7A7461", marginTop: 10, lineHeight: 1.5 }}>
-              Spell it exactly as it should appear everywhere — an Admin checks it before
-              approving, because everything groups on this name afterwards.
+              Once approved this becomes selectable on any project. An Admin can correct the
+              spelling before approving.
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
-              <button className="cb-btn-ghost" onClick={() => setAskNew(null)}>Cancel</button>
-              <button className="cb-btn" disabled={!newName.trim() || saving} onClick={submitNewName}>
+              <button className="cb-btn-ghost" onClick={() => setAskTrade(false)}>Cancel</button>
+              <button className="cb-btn" disabled={!newTradeName.trim() || saving} onClick={submitNewTrade}>
                 {saving ? "Submitting…" : "Submit"}
               </button>
             </div>
@@ -1086,9 +1300,12 @@
               Projects are created by request so the name gets checked once,<br />
               before it becomes the one everybody reports against.
             </div>
-            <button className="cb-btn" onClick={() => { setAskNew("project"); setNewName(""); }}>Request a project</button>
+            <button className="cb-btn" onClick={() => setShowProjectModal(true)}>Request a project</button>
           </div>
-          {newNameModal}
+          {showProjectModal && (
+            <ProjectRequestModal trades={trades} periods={periods} saving={saving}
+              onCancel={() => setShowProjectModal(false)} onSubmit={submitNewProject} />
+          )}
         </div>
       );
 
@@ -1096,8 +1313,8 @@
         <div>
           {/* Controls */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
-            <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setAskNew("project"); setNewName(""); }}>+ Request project</button>
-            <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setAskNew("trade"); setNewName(""); }}>+ Request trade</button>
+            <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowProjectModal(true)}>+ Request project</button>
+            <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setAskTrade(true); setNewTradeName(""); }}>+ Request trade</button>
             {isAdmin && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowAssign(!showAssign)}>{showAssign ? "Hide assignments" : "Project assignments"}</button>}
             <div style={{ marginLeft: "auto" }}>
               {isOwner ? (
@@ -1141,10 +1358,8 @@
                       {members.map(u => {
                         const on = assignments.some(a => a.user_id === u.user_id && a.project_id === proj.id);
                         return (
-                          <button key={u.user_id} onClick={() => toggleAssignment(u.user_id, proj.id, !on)}
+                          <button key={u.user_id} className="trade-toggle" onClick={() => toggleAssignment(u.user_id, proj.id, !on)}
                             style={{
-                              fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500,
-                              padding: "5px 12px", borderRadius: 99, cursor: "pointer",
                               background: on ? "#1F4E78" : "#FFFEFA", color: on ? "#F7F4EC" : "#5A5444",
                               border: on ? "1px solid #1F4E78" : "1px solid #C9C2AC",
                             }}>
@@ -1163,7 +1378,7 @@
           <div style={{ marginBottom: 24 }}>
             <div className="section-title">Total Manpower</div>
             <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "16px 16px 10px" }}>
-              <AggregateChart rollup={rollup} periods={periods} trades={trades} />
+              <AggregateChart rollup={rollup} periods={periods} trades={activeTrades} />
             </div>
             {coverage !== null && coverage < 100 && (
               <div className="note-bar" style={{ marginTop: 8, marginBottom: 0 }}>
@@ -1174,42 +1389,44 @@
           </div>
 
           {/* Rollup table */}
-          <div style={{ marginBottom: 24 }}>
-            <div className="section-title">By Trade</div>
-            <div style={{ overflowX: "auto", border: "1px solid #D8D2BF", borderRadius: 3 }}>
-              <table className="roll-table">
-                <thead>
-                  <tr>
-                    <th>Trade</th>
-                    {periods.map(p => <th key={p.key}>{p.label.toUpperCase()}</th>)}
-                    <th>CHANGE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trades.map(t => {
-                    const now = rollup.byTrade[t.id]["now"];
-                    const last = rollup.byTrade[t.id][periods[periods.length - 1].key];
-                    const delta = last - now;
-                    return (
-                      <tr key={t.id}>
-                        <td>{t.name}</td>
-                        {periods.map(p => <td key={p.key}>{rollup.byTrade[t.id][p.key]}</td>)}
-                        <td>
-                          {delta === 0 ? <span style={{ color: "#9A9381" }}>—</span> :
-                            <span className={delta > 0 ? "pill-up" : "pill-down"}>{delta > 0 ? "+" : ""}{delta}</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  <tr>
-                    <td style={{ color: "#8A8270" }}>Unspecified</td>
-                    {periods.map(p => <td key={p.key} style={{ color: "#8A8270" }}>{rollup.unspecified[p.key]}</td>)}
-                    <td></td>
-                  </tr>
-                </tbody>
-              </table>
+          {activeTrades.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <div className="section-title">By Trade</div>
+              <div style={{ overflowX: "auto", border: "1px solid #D8D2BF", borderRadius: 3 }}>
+                <table className="roll-table">
+                  <thead>
+                    <tr>
+                      <th>Trade</th>
+                      {periods.map(p => <th key={p.key}>{p.label.toUpperCase()}</th>)}
+                      <th>CHANGE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeTrades.map(t => {
+                      const now = rollup.byTrade[t.id]["now"];
+                      const last = rollup.byTrade[t.id][periods[periods.length - 1].key];
+                      const delta = last - now;
+                      return (
+                        <tr key={t.id}>
+                          <td>{t.name}</td>
+                          {periods.map(p => <td key={p.key}>{rollup.byTrade[t.id][p.key]}</td>)}
+                          <td>
+                            {delta === 0 ? <span style={{ color: "#9A9381" }}>—</span> :
+                              <span className={delta > 0 ? "pill-up" : "pill-down"}>{delta > 0 ? "+" : ""}{delta}</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr>
+                      <td style={{ color: "#8A8270" }}>Unspecified</td>
+                      {periods.map(p => <td key={p.key} style={{ color: "#8A8270" }}>{rollup.unspecified[p.key]}</td>)}
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Analytics */}
           <div style={{ marginBottom: 24 }}>
@@ -1251,7 +1468,9 @@
             const updated = lastUpdatedFor(proj.id);
             const staleDays = daysSince(updated);
             const projActuals = actuals.filter(a => a.project_id === proj.id && a.trade_id === null);
-            const forecast = periods.reduce((o, p) => { o[p.key] = num(valueOf(proj.id, null, p.key)); return o; }, {});
+            const forecast = periods.reduce((o, p) => { o[p.key] = numOf(valueOf(proj.id, null, p.key)); return o; }, {});
+            const onProject = tradesOn(proj.id);
+            const available = trades.filter(t => onProject.every(x => x.id !== t.id));
 
             return (
               <div key={proj.id} className="mp-card">
@@ -1300,7 +1519,7 @@
                               </td>
                             ))}
                           </tr>
-                          {trades.map(t => (
+                          {onProject.map(t => (
                             <tr key={t.id}>
                               <td>{t.name}</td>
                               {periods.map(p => (
@@ -1313,20 +1532,42 @@
                               ))}
                             </tr>
                           ))}
-                          <tr>
-                            <td style={{ color: "#8A8270" }}>Unspecified</td>
-                            {periods.map(p => {
-                              const u = unspecifiedFor(proj.id, p.key);
-                              return (
-                                <td key={p.key}>
-                                  <span className="mp-readonly" style={{ color: u < 0 ? "#9A3C3C" : "#8A8270", fontWeight: u < 0 ? 600 : 400 }}>{u}</span>
-                                </td>
-                              );
-                            })}
-                          </tr>
+                          {onProject.length > 0 && (
+                            <tr>
+                              <td style={{ color: "#8A8270" }}>Unspecified</td>
+                              {periods.map(p => {
+                                const u = unspecifiedFor(proj.id, p.key);
+                                return (
+                                  <td key={p.key}>
+                                    <span className="mp-readonly" style={{ color: u < 0 ? "#9A3C3C" : "#8A8270", fontWeight: u < 0 ? 600 : 400 }}>{u}</span>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
+
+                    {/* Add a trade to this project */}
+                    {editable && available.length > 0 && (
+                      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270" }}>ADD TRADE</span>
+                        {available.map(t => (
+                          <button key={t.id} className="trade-toggle"
+                            onClick={() => addTradeToProject(proj.id, t.id)}
+                            style={{ background: "#FFFEFA", color: "#5A5444", border: "1px solid #C9C2AC" }}>
+                            + {t.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {onProject.length === 0 && (
+                      <div className="note-bar" style={{ marginTop: 12, marginBottom: 0 }}>
+                        No trades on this project yet — only the total is tracked. Add the trades
+                        that apply so this project counts toward transfer matching.
+                      </div>
+                    )}
 
                     {overAllocated(proj.id) && (
                       <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", border: "1px solid #C98787", borderRadius: 3, padding: "8px 12px", marginTop: 10 }}>
@@ -1355,7 +1596,11 @@
             );
           })}
 
-          {newNameModal}
+          {showProjectModal && (
+            <ProjectRequestModal trades={trades} periods={periods} saving={saving}
+              onCancel={() => setShowProjectModal(false)} onSubmit={submitNewProject} />
+          )}
+          {tradeModal}
         </div>
       );
     }
@@ -1399,11 +1644,13 @@
           setRequests(reqs || []);
           const { data: pending } = await sb.from("user_roles").select("*").eq("status", "pending");
           setPendingUsers(pending || []);
+        }
+        if (isOwner) {
           const { data: all } = await sb.from("user_roles").select("*").order("full_name");
           setAllUsers(all || []);
         }
         setLoading(false);
-      }, [isAdmin]);
+      }, [isAdmin, isOwner]);
 
       useEffect(() => { load(); }, [isAdmin]);
 
@@ -1426,13 +1673,9 @@
       const positions = useMemo(() => Array.from(new Set(withStatus.map(p => p.position).filter(Boolean))).sort(), [withStatus]);
       const rosterTrades = useMemo(() => Array.from(new Set(withStatus.map(p => p.trade).filter(Boolean))).sort(), [withStatus]);
 
-      const visibleUsers = useMemo(() => allUsers.filter(u => {
-        if (isOwner) return true;
-        if (u.role?.startsWith("hidden_")) return false;
-        if (isManagerRole(u.role)) return false;
-        return true;
-      }), [allUsers, isOwner]);
-
+      // Manage Users is the Owner's panel. Admins approve access requests but do
+      // not see or manage the user list.
+      const visibleUsers = useMemo(() => allUsers, [allUsers]);
       const visiblePendingUsers = useMemo(
         () => pendingUsers.filter(u => isOwner || !u.role?.startsWith("hidden_")),
         [pendingUsers, isOwner]
@@ -1503,18 +1746,17 @@
         else { notify(`${u.full_name || u.email} updated`); load(); }
       }
 
-      async function notifyRequestResult(req, approved) {
-        let payload = {};
-        try { payload = JSON.parse(req.payload); } catch (e) { payload = {}; }
+      async function notifyRequestResult(req, approved, payload) {
         const { data: userRole } = await sb.from("user_roles").select("email, full_name").eq("user_id", req.requester_id).single();
         if (!userRole) return;
         const kind = req.kind || "roster";
+        const p = payload || {};
         const actionLabel =
-          kind === "project"  ? `add the project ${payload.name}` :
-          kind === "trade"    ? `add the trade ${payload.name}` :
-          kind === "manpower" ? `update manpower for ${payload.project_name}` :
+          kind === "project"  ? `add the project ${p.name}` :
+          kind === "trade"    ? `add the trade ${p.name}` :
+          kind === "manpower" ? `update manpower for ${p.project_name}` :
           req.action === "add"  ? "add a new person" :
-          req.action === "edit" ? `edit ${payload.name}` : `remove ${payload.name}`;
+          req.action === "edit" ? `edit ${p.name}` : `remove ${p.name}`;
         await sendEmail(userRole.email,
           approved ? "Change Request Approved — Crew Board" : "Change Request Rejected — Crew Board",
           approved
@@ -1523,22 +1765,22 @@
         );
       }
 
-      // Applies an approved manpower submission to the live record. The database
-      // triggers write both history logs from here, same as a direct save.
-      async function applyManpower(payload) {
-        const { data: existing } = await sb.from("manpower").select("*").eq("project_id", payload.project_id);
+      // Writes an approved grid to the live record. Database triggers handle
+      // both history logs from here, exactly as for a direct save.
+      async function writeManpowerRows(projectId, payload) {
+        const { data: existing } = await sb.from("manpower").select("*").eq("project_id", projectId);
         const cur = existing || [];
         const updates = [], inserts = [];
         (payload.rows || []).forEach(row => {
           (payload.periods || []).forEach(p => {
-            const headcount = (row.values && row.values[p.key] != null) ? row.values[p.key] : 0;
+            const headcount = numOf(row.values ? row.values[p.key] : 0);
             const tradeId = row.trade_id == null ? null : row.trade_id;
             const periodDate = p.date == null ? null : p.date;
             const found = cur.find(x =>
               (x.trade_id == null ? null : x.trade_id) === tradeId &&
               (x.period_date == null ? null : x.period_date) === periodDate);
-            if (found) updates.push({ id: found.id, project_id: payload.project_id, trade_id: tradeId, period_date: periodDate, headcount });
-            else inserts.push({ project_id: payload.project_id, trade_id: tradeId, period_date: periodDate, headcount });
+            if (found) updates.push({ id: found.id, project_id: projectId, trade_id: tradeId, period_date: periodDate, headcount });
+            else inserts.push({ project_id: projectId, trade_id: tradeId, period_date: periodDate, headcount });
           });
         });
         if (updates.length) {
@@ -1552,25 +1794,39 @@
         return null;
       }
 
-      async function approveRequest(req) {
-        let payload = {};
-        try { payload = JSON.parse(req.payload); }
-        catch (e) { notify("Approve failed — the request payload is unreadable", "error"); return; }
+      // `payload` is the approver's reviewed version, which may differ from
+      // req.payload. The original submission stays on the request row.
+      async function approveRequest(req, payload) {
         const kind = req.kind || "roster";
         let error = null;
 
-        if (kind === "project" || kind === "trade") {
-          const table = kind === "project" ? "projects" : "trades";
-          ({ error } = await sb.from(table).insert({
-            name: payload.name, status: "approved",
+        if (kind === "project") {
+          if (!payload.name || !payload.name.trim()) { notify("Project name cannot be empty", "error"); return; }
+          const { data: created, error: projErr } = await sb.from("projects").insert({
+            name: payload.name.trim(), status: "approved",
+            requested_by: req.requester_id, approved_at: new Date().toISOString(),
+          }).select().single();
+          if (projErr) {
+            notify(projErr.code === "23505"
+              ? `A project named "${payload.name.trim()}" already exists — rename it here or reject the request.`
+              : "Approve failed: " + projErr.message, "error");
+            return;
+          }
+          if (created && Array.isArray(payload.rows)) {
+            error = await writeManpowerRows(created.id, payload);
+          }
+        } else if (kind === "trade") {
+          if (!payload.name || !payload.name.trim()) { notify("Trade name cannot be empty", "error"); return; }
+          ({ error } = await sb.from("trades").insert({
+            name: payload.name.trim(), status: "approved",
             requested_by: req.requester_id, approved_at: new Date().toISOString(),
           }));
           if (error && error.code === "23505") {
-            notify(`A ${kind} named "${payload.name}" already exists — reject this request instead.`, "error");
+            notify(`A trade named "${payload.name.trim()}" already exists — rename it here or reject the request.`, "error");
             return;
           }
         } else if (kind === "manpower") {
-          error = await applyManpower(payload);
+          error = await writeManpowerRows(payload.project_id, payload);
         } else {
           const data = { name: payload.name, position: payload.position || null, trade: payload.trade || null, current_project: payload.current_project || null, project_end: payload.project_end || null, next_project: payload.next_project || null, vacation_start: payload.vacation_start || null, vacation_end: payload.vacation_end || null, comments: payload.comments || null };
           if (req.action === "add") ({ error } = await sb.from("roster").insert(data));
@@ -1585,14 +1841,18 @@
 
         if (error) { notify("Approve failed: " + error.message, "error"); return; }
         await sb.from("requests").update({ status: "approved" }).eq("id", req.id);
-        await notifyRequestResult(req, true);
+        await notifyRequestResult(req, true, payload);
         notify("Request approved"); load();
       }
 
       async function rejectRequest(id, req) {
         const { error } = await sb.from("requests").update({ status: "rejected" }).eq("id", id);
         if (error) { notify("Reject failed: " + error.message, "error"); return; }
-        if (req) await notifyRequestResult(req, false);
+        if (req) {
+          let p = {};
+          try { p = JSON.parse(req.payload); } catch (e) { p = {}; }
+          await notifyRequestResult(req, false, p);
+        }
         notify("Request rejected"); load();
       }
 
@@ -1613,7 +1873,7 @@
                   <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: isOwner ? "#A4621A" : isAdmin ? "#3E6F5C" : "#1F4E78", fontWeight: 600, marginTop: 2 }}>{isOwner ? "OWNER" : isAdmin ? "ADMIN" : "MEMBER"}</div>
                 </div>
                 <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={signOut}>Sign out</button>
-                {isAdmin && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowUsers(!showUsers)}>{showUsers ? "Hide users" : "Manage users"}</button>}
+                {isOwner && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowUsers(!showUsers)}>{showUsers ? "Hide users" : "Manage users"}</button>}
                 {tab === "roster" && (
                   <button className="cb-btn" onClick={() => setEditing({})}>{isEditor ? "+ Add" : "+ Request"}</button>
                 )}
@@ -1626,7 +1886,7 @@
               <button className={"tab-btn" + (tab === "manpower" ? " active" : "")} onClick={() => setTab("manpower")}>Manpower</button>
             </div>
 
-            {/* Access Requests */}
+            {/* Access Requests — admins and owner */}
             {isAdmin && visiblePendingUsers.length > 0 && (
               <div style={{ marginBottom: 24 }}>
                 <div className="section-title">
@@ -1655,15 +1915,10 @@
             {/* Change Requests */}
             {isAdmin && <RequestsPanel requests={requests} roster={roster} onApprove={approveRequest} onReject={rejectRequest} />}
 
-            {/* Manage Users */}
-            {isAdmin && showUsers && (
+            {/* Manage Users — owner only */}
+            {isOwner && showUsers && (
               <div style={{ marginBottom: 24 }}>
                 <div className="section-title">All Users</div>
-                {!isOwner && (
-                  <div className="note-bar">
-                    Admin and Owner accounts are managed by the Owner and are not shown here.
-                  </div>
-                )}
                 {visibleUsers.length === 0 ? (
                   <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 28, textAlign: "center", color: "#8A8270", fontSize: 13 }}>No users to manage yet.</div>
                 ) : (
@@ -1681,10 +1936,10 @@
                       {u.user_id !== user.id && !isOwnerRole(u.role) && (
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           {u.status !== "approved" && <button className="cb-btn-approve" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "approved", u.role || "member")}>Approve</button>}
-                          {u.status === "approved" && u.role !== "admin" && isOwner && <button className="cb-btn" style={{ fontSize: 12, padding: "7px 12px", background: "#1F4E78", borderColor: "#1F4E78" }} onClick={() => changeUserStatus(u, "approved", "admin")}>Make Admin</button>}
-                          {u.status === "approved" && u.role === "admin" && isOwner && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "approved", "member")}>Demote to Member</button>}
+                          {u.status === "approved" && u.role !== "admin" && <button className="cb-btn" style={{ fontSize: 12, padding: "7px 12px", background: "#1F4E78", borderColor: "#1F4E78" }} onClick={() => changeUserStatus(u, "approved", "admin")}>Make Admin</button>}
+                          {u.status === "approved" && u.role === "admin" && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "approved", "member")}>Demote to Member</button>}
                           {u.status !== "rejected" && <button className="cb-btn-danger" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "rejected", null)}>Revoke access</button>}
-                          {isOwner && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, u.status, u.role?.startsWith("hidden_") ? u.role.replace("hidden_", "") : "hidden_" + u.role)}>{u.role?.startsWith("hidden_") ? "Unhide" : "Hide"}</button>}
+                          <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, u.status, u.role?.startsWith("hidden_") ? u.role.replace("hidden_", "") : "hidden_" + u.role)}>{u.role?.startsWith("hidden_") ? "Unhide" : "Hide"}</button>
                         </div>
                       )}
                       {u.user_id !== user.id && isOwnerRole(u.role) && <div style={{ fontSize: 11, color: "#A4621A", fontFamily: "'JetBrains Mono', monospace" }}>OWNER — PROTECTED</div>}
@@ -1715,9 +1970,9 @@
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 7 }}>FILTER BY POSITION</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      <button onClick={() => setPositionFilter("all")} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: positionFilter === "all" ? "#1B2A33" : "#FFFEFA", color: positionFilter === "all" ? "#F7F4EC" : "#5A5444", border: positionFilter === "all" ? "1px solid #1B2A33" : "1px solid #C9C2AC" }}>All</button>
+                      <button onClick={() => setPositionFilter("all")} className="trade-toggle" style={{ background: positionFilter === "all" ? "#1B2A33" : "#FFFEFA", color: positionFilter === "all" ? "#F7F4EC" : "#5A5444", border: positionFilter === "all" ? "1px solid #1B2A33" : "1px solid #C9C2AC" }}>All</button>
                       {positions.map(pos => (
-                        <button key={pos} onClick={() => setPositionFilter(positionFilter === pos ? "all" : pos)} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: positionFilter === pos ? "#1F4E78" : "#FFFEFA", color: positionFilter === pos ? "#F7F4EC" : "#5A5444", border: positionFilter === pos ? "1px solid #1F4E78" : "1px solid #C9C2AC" }}>
+                        <button key={pos} onClick={() => setPositionFilter(positionFilter === pos ? "all" : pos)} className="trade-toggle" style={{ background: positionFilter === pos ? "#1F4E78" : "#FFFEFA", color: positionFilter === pos ? "#F7F4EC" : "#5A5444", border: positionFilter === pos ? "1px solid #1F4E78" : "1px solid #C9C2AC" }}>
                           {pos}<span style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}>{withStatus.filter(p => p.position === pos).length}</span>
                         </button>
                       ))}
@@ -1729,9 +1984,9 @@
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 7 }}>FILTER BY TRADE</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      <button onClick={() => setTradeFilter("all")} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: tradeFilter === "all" ? "#1B2A33" : "#FFFEFA", color: tradeFilter === "all" ? "#F7F4EC" : "#5A5444", border: tradeFilter === "all" ? "1px solid #1B2A33" : "1px solid #C9C2AC" }}>All</button>
+                      <button onClick={() => setTradeFilter("all")} className="trade-toggle" style={{ background: tradeFilter === "all" ? "#1B2A33" : "#FFFEFA", color: tradeFilter === "all" ? "#F7F4EC" : "#5A5444", border: tradeFilter === "all" ? "1px solid #1B2A33" : "1px solid #C9C2AC" }}>All</button>
                       {rosterTrades.map(trade => (
-                        <button key={trade} onClick={() => setTradeFilter(tradeFilter === trade ? "all" : trade)} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 99, cursor: "pointer", background: tradeFilter === trade ? "#3E6F5C" : "#FFFEFA", color: tradeFilter === trade ? "#F7F4EC" : "#5A5444", border: tradeFilter === trade ? "1px solid #3E6F5C" : "1px solid #C9C2AC" }}>
+                        <button key={trade} onClick={() => setTradeFilter(tradeFilter === trade ? "all" : trade)} className="trade-toggle" style={{ background: tradeFilter === trade ? "#3E6F5C" : "#FFFEFA", color: tradeFilter === trade ? "#F7F4EC" : "#5A5444", border: tradeFilter === trade ? "1px solid #3E6F5C" : "1px solid #C9C2AC" }}>
                           {trade}<span style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}>{withStatus.filter(p => p.trade === trade).length}</span>
                         </button>
                       ))}
