@@ -93,10 +93,6 @@
       border: 1px solid #D8D2BF; border-top: none; border-left: 4px solid #C9821F;
       border-radius: 0 0 3px 3px; background: #FFFEFA; padding: 14px 16px;
     }
-    .note-bar {
-      font-size: 12px; color: #6B6354; background: #EFEBDD; border: 1px solid #D8D2BF;
-      border-radius: 3px; padding: 8px 12px; margin-bottom: 10px; line-height: 1.5;
-    }
     .section-title {
       font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 16px;
       text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 10px;
@@ -120,13 +116,12 @@
       background: #FFFEFA; border: 1px solid #D8D2BF; border-left: 4px solid #1F4E78;
       border-radius: 3px; margin-bottom: 10px;
     }
+    .mp-card.done { border-left-color: #9A9381; opacity: 0.85; }
     .mp-card-head {
       padding: 13px 16px; display: flex; align-items: center; justify-content: space-between;
       gap: 12px; cursor: pointer; flex-wrap: wrap;
     }
     .mp-card-head:hover { background: #FBF9F2; }
-    .mp-card-head.static { cursor: default; }
-    .mp-card-head.static:hover { background: transparent; }
     .mp-card-body { border-top: 1px solid #E3DFD1; padding: 14px 16px; }
     .mp-grid { width: 100%; border-collapse: collapse; font-size: 13px; }
     .mp-grid th {
@@ -135,10 +130,11 @@
       white-space: nowrap;
     }
     .mp-grid th:first-child { text-align: left; }
-    .mp-grid td { padding: 4px 6px; border-top: 1px solid #EDE9DC; text-align: right; }
-    .mp-grid td:first-child { text-align: left; color: #5A5444; }
+    .mp-grid td { padding: 4px 6px; border-top: 1px solid #EDE9DC; text-align: right; white-space: nowrap; }
+    .mp-grid td:first-child { text-align: left; color: #5A5444; white-space: normal; }
+    .mp-grid tr.total-row td { border-top: 2px solid #D8D2BF; font-weight: 600; color: #1B2A33; }
     .mp-num {
-      font-family: 'JetBrains Mono', monospace; font-size: 13px; width: 68px;
+      font-family: 'JetBrains Mono', monospace; font-size: 13px; width: 62px;
       border: 1px solid #C9C2AC; background: #FFFEFA; color: #1B2A33;
       border-radius: 3px; padding: 6px 8px; text-align: right; -webkit-appearance: none;
     }
@@ -152,7 +148,7 @@
       white-space: nowrap;
     }
     .roll-table th:first-child { text-align: left; }
-    .roll-table td { padding: 9px 10px; border-bottom: 1px solid #EDE9DC; text-align: right; font-family: 'JetBrains Mono', monospace; }
+    .roll-table td { padding: 9px 10px; border-bottom: 1px solid #EDE9DC; text-align: right; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
     .roll-table td:first-child { text-align: left; font-family: 'Inter', sans-serif; }
     .pill-up { color: #9A3C3C; background: #F6E8E8; border: 1px solid #C98787; border-radius: 3px; padding: 1px 6px; font-size: 11px; }
     .pill-down { color: #3E6F5C; background: #E4EEE7; border: 1px solid #8DB3A2; border-radius: 3px; padding: 1px 6px; font-size: 11px; }
@@ -165,6 +161,18 @@
     .trade-toggle {
       font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
       padding: 5px 12px; border-radius: 99px; cursor: pointer;
+    }
+    .comment {
+      border-top: 1px solid #EDE9DC; padding: 9px 0;
+      display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;
+    }
+    .comment-meta {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px;
+      letter-spacing: 0.04em; color: #9A9381; margin-bottom: 3px;
+    }
+    .status-chip {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em;
+      border-radius: 3px; padding: 2px 7px; border: 1px solid;
     }
   </style>
 </head>
@@ -186,9 +194,7 @@
     const OWNER_EMAIL = "goldytraju@gmail.com";
 
     // NOTE: this is a stub. Browser-side code cannot send mail. Wiring this up
-    // requires a Supabase Edge Function with a mail provider key. Until then,
-    // no access-request or approval notifications are actually delivered.
-    // (Supabase Auth password-reset mail is separate and does work.)
+    // requires a Supabase Edge Function with a mail provider key.
     async function sendEmail(to, subject, html) {
       console.log("Email notification (not sent — server-side function needed):", { to, subject });
     }
@@ -197,7 +203,7 @@
     const numOf = (v) => { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; };
     const digitsOnly = (v) => v === "" || /^\d{0,5}$/.test(v);
 
-    // ── Date helpers ──────────────────────────────────────────────────────────
+    // ── Dates ─────────────────────────────────────────────────────────────────
 
     function isoDate(d) {
       const p = (n) => String(n).padStart(2, "0");
@@ -206,24 +212,32 @@
     function endOfMonth(year, monthIndex) { return new Date(year, monthIndex + 1, 0); }
     function monthLabel(d) { return d.toLocaleDateString("en-CA", { month: "long" }); }
 
-    // Two forecast buckets: end of this month and end of next. When fewer than
-    // 7 days remain in the current month the window rolls forward, so nobody is
-    // ever asked to forecast two days out.
+    // Six forecast months plus today. When fewer than 7 days remain in the
+    // current month the window rolls forward, so nobody is asked to forecast
+    // two days out.
+    const FORECAST_MONTHS = 6;
     const ROLLOVER_DAYS = 7;
 
     function computePeriods(today = new Date()) {
       const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const thisMonthEnd = endOfMonth(t.getFullYear(), t.getMonth());
-      const daysLeft = Math.round((thisMonthEnd - t) / 86400000);
-      const shift = daysLeft < ROLLOVER_DAYS ? 1 : 0;
-      const p1 = endOfMonth(t.getFullYear(), t.getMonth() + shift);
-      const p2 = endOfMonth(t.getFullYear(), t.getMonth() + shift + 1);
-      return [
-        { key: "now", date: null, label: "On site now", short: "NOW" },
-        { key: isoDate(p1), date: isoDate(p1), label: "End of " + monthLabel(p1), short: monthLabel(p1).slice(0, 3).toUpperCase() },
-        { key: isoDate(p2), date: isoDate(p2), label: "End of " + monthLabel(p2), short: monthLabel(p2).slice(0, 3).toUpperCase() },
-      ];
+      const shift = Math.round((thisMonthEnd - t) / 86400000) < ROLLOVER_DAYS ? 1 : 0;
+      const out = [{ key: "now", date: null, label: "On site now", short: "NOW" }];
+      for (let i = 0; i < FORECAST_MONTHS; i++) {
+        const d = endOfMonth(t.getFullYear(), t.getMonth() + shift + i);
+        out.push({
+          key: isoDate(d), date: isoDate(d),
+          label: "End of " + monthLabel(d),
+          short: monthLabel(d).slice(0, 3).toUpperCase() + " " + String(d.getFullYear()).slice(2),
+        });
+      }
+      return out;
     }
+
+    // Every lookup goes through this. Postgres dates arrive as "YYYY-MM-DD",
+    // but a timestamp or a padded value would break naive string equality and
+    // silently zero out the whole board — which is exactly what happened before.
+    const periodKeyOf = (row) => row.period_date ? String(row.period_date).slice(0, 10) : "now";
 
     function daysUntil(dateStr) {
       if (!dateStr) return null;
@@ -255,7 +269,11 @@
 
     function fmt(d) {
       if (!d) return "—";
-      return new Date(d + "T00:00:00").toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
+      return new Date(String(d).slice(0, 10) + "T00:00:00").toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
+    }
+    function fmtStamp(ts) {
+      if (!ts) return "";
+      return new Date(ts).toLocaleString("en-CA", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
     }
 
     // ── Shared inputs ─────────────────────────────────────────────────────────
@@ -300,27 +318,29 @@
       return <div className={`toast${type === "error" ? " error" : ""}`}>{message}</div>;
     }
 
-    // Editable grid of Total + trade lines across the period columns.
-    // Shared by the request modal and the approver's review panel.
+    // Trade lines across the period columns, with a derived Total beneath.
+    // Total is never typed — it is the sum of the trade rows, matching what the
+    // database trigger writes.
     function ManpowerGrid({ rows, periods, onChange, disabled }) {
-      const unspecified = (pKey) => {
-        const total = numOf((rows.find(r => r.trade_id === null) || { values: {} }).values[pKey]);
-        const detail = rows.filter(r => r.trade_id !== null).reduce((s, r) => s + numOf(r.values[pKey]), 0);
-        return total - detail;
-      };
+      const total = (pKey) => rows.reduce((s, r) => s + numOf(r.values[pKey]), 0);
       return (
         <div style={{ overflowX: "auto" }}>
           <table className="mp-grid">
             <thead>
               <tr>
-                <th>Line</th>
-                {periods.map(p => <th key={p.key}>{(p.label || "").toUpperCase()}</th>)}
+                <th>Trade</th>
+                {periods.map(p => <th key={p.key}>{p.short || (p.label || "").toUpperCase()}</th>)}
               </tr>
             </thead>
             <tbody>
+              {rows.length === 0 && (
+                <tr><td colSpan={periods.length + 1} style={{ color: "#8A8270", fontSize: 12, padding: "10px 6px" }}>
+                  No trades selected yet.
+                </td></tr>
+              )}
               {rows.map((row, ri) => (
-                <tr key={row.trade_id === null ? "total" : row.trade_id}>
-                  <td style={row.trade_id === null ? { fontWeight: 600, color: "#1B2A33" } : null}>{row.label}</td>
+                <tr key={row.trade_id}>
+                  <td>{row.label}</td>
                   {periods.map(p => (
                     <td key={p.key}>
                       <input className="mp-num" inputMode="numeric" disabled={disabled}
@@ -331,17 +351,10 @@
                   ))}
                 </tr>
               ))}
-              {rows.length > 1 && (
-                <tr>
-                  <td style={{ color: "#8A8270" }}>Unspecified</td>
-                  {periods.map(p => {
-                    const u = unspecified(p.key);
-                    return (
-                      <td key={p.key}>
-                        <span className="mp-readonly" style={{ color: u < 0 ? "#9A3C3C" : "#8A8270", fontWeight: u < 0 ? 600 : 400 }}>{u}</span>
-                      </td>
-                    );
-                  })}
+              {rows.length > 0 && (
+                <tr className="total-row">
+                  <td>Total</td>
+                  {periods.map(p => <td key={p.key}><span className="mp-readonly">{total(p.key)}</span></td>)}
                 </tr>
               )}
             </tbody>
@@ -350,15 +363,7 @@
       );
     }
 
-    function gridOverAllocated(rows, periods) {
-      return periods.some(p => {
-        const total = numOf((rows.find(r => r.trade_id === null) || { values: {} }).values[p.key]);
-        const detail = rows.filter(r => r.trade_id !== null).reduce((s, r) => s + numOf(r.values[p.key]), 0);
-        return detail > total;
-      });
-    }
-
-    // ── Login Screen ──────────────────────────────────────────────────────────
+    // ── Login ─────────────────────────────────────────────────────────────────
     function LoginScreen({ onSwitchToSignup }) {
       const [email, setEmail] = useState("");
       const [password, setPassword] = useState("");
@@ -413,7 +418,7 @@
       );
     }
 
-    // ── Sign Up Screen ────────────────────────────────────────────────────────
+    // ── Sign Up ───────────────────────────────────────────────────────────────
     function SignupScreen({ onSwitchToLogin }) {
       const [firstName, setFirstName] = useState("");
       const [lastName, setLastName] = useState("");
@@ -432,8 +437,7 @@
         const { data, error } = await sb.auth.signUp({ email, password });
         if (error) { setMessage({ text: error.message, type: "error" }); setLoading(false); return; }
         if (data?.user) {
-          // role and status are also pinned by the database insert policy —
-          // these values must stay 'member' / 'pending' or the insert is rejected.
+          // role and status are pinned by the database insert policy too.
           const { error: roleErr } = await sb.from("user_roles").insert({
             user_id: data.user.id, email: data.user.email, full_name: fullName,
             role: "member", status: "pending",
@@ -442,7 +446,7 @@
             setMessage({ text: "Account created, but the access request failed to register: " + roleErr.message + " — please contact your manager.", type: "error" });
             setLoading(false); return;
           }
-          await sendEmail(OWNER_EMAIL, "New Access Request — Crew Board", `<p><strong>${fullName}</strong> (${email}) has requested access to the Crew Board.</p><p><a href="https://goldytr.github.io/crew-board/">Log in to approve or reject</a></p>`);
+          await sendEmail(OWNER_EMAIL, "New Access Request — Crew Board", `<p><strong>${fullName}</strong> (${email}) has requested access to the Crew Board.</p>`);
         }
         setMessage({ text: "Request submitted — an Admin will approve your access shortly.", type: "ok" });
         setLoading(false);
@@ -491,7 +495,7 @@
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <Field label="Name"><input className="cb-input" value={form.name} onChange={set("name")} placeholder="Full name" /></Field>
             <Field label="Position / Role"><input className="cb-input" value={form.position || ""} onChange={set("position")} placeholder="e.g. Lead Pipefitter, Superintendent" /></Field>
-            <Field label="Trade"><input className="cb-input" value={form.trade || ""} onChange={set("trade")} placeholder="e.g. Scaffolding, Insulation, Pipefitting" /></Field>
+            <Field label="Trade"><input className="cb-input" value={form.trade || ""} onChange={set("trade")} placeholder="e.g. Scaffolding, Insulation" /></Field>
             <div className="form-row-2">
               <Field label="Current project"><input className="cb-input" value={form.current_project || ""} onChange={set("current_project")} placeholder="e.g. Dry Creek WTP" /></Field>
               <Field label="Project end date"><input className="cb-input" type="date" value={form.project_end || ""} onChange={set("project_end")} /></Field>
@@ -511,7 +515,7 @@
       );
     }
 
-    // ── Requests Panel ────────────────────────────────────────────────────────
+    // ── Requests ──────────────────────────────────────────────────────────────
     const FIELD_LABELS = {
       name: "Name", position: "Position", trade: "Trade", current_project: "Current project",
       project_end: "Project end", next_project: "Next project",
@@ -520,9 +524,8 @@
     const ROSTER_FIELDS = ["name","position","trade","current_project","project_end","next_project","vacation_start","vacation_end","comments"];
     const DATE_FIELDS = ["project_end", "vacation_start", "vacation_end"];
 
-    // The approver reviews and, where needed, corrects before approving. What
-    // gets applied is the corrected version; requests.payload keeps the original
-    // submission, so the record of what was asked for survives.
+    // The approver reviews and corrects before approving. What gets applied is
+    // the corrected version; requests.payload keeps the original submission.
     function RequestCard({ r, roster, onApprove, onReject }) {
       const [expanded, setExpanded] = useState(false);
       const original = useMemo(() => {
@@ -547,13 +550,16 @@
         kind === "manpower" ? <span>submitted manpower for <strong>{original.project_name}</strong></span> :
         <span>requested to {r.action === "add" ? "add" : r.action === "edit" ? "edit" : "remove"} <strong>{original.name}</strong></span>;
 
+      // Only trade rows are editable; the total is derived on write.
+      const gridRows = Array.isArray(draft.rows) ? draft.rows.filter(x => x.trade_id != null) : [];
       const hasGrid = (kind === "manpower" || kind === "project") && Array.isArray(draft.rows);
-      const overAlloc = hasGrid && gridOverAllocated(draft.rows, draft.periods || []);
 
-      function setGridValue(rowIndex, periodKey, value) {
+      function setGridValue(visibleIndex, periodKey, value) {
+        const target = gridRows[visibleIndex];
         setDraft(d => {
           const next = clone(d);
-          next.rows[rowIndex].values[periodKey] = value === "" ? "" : numOf(value);
+          const row = next.rows.find(x => x.trade_id === target.trade_id);
+          if (row) row.values[periodKey] = value === "" ? "" : numOf(value);
           return next;
         });
       }
@@ -583,23 +589,28 @@
                 {edited && <span className="edited-chip">EDITED BY YOU</span>}
               </div>
 
-              <div className="note-bar">
-                You can correct anything below before approving. What gets saved is what
-                you see here; the original submission stays on the request.
-              </div>
-
               {(kind === "project" || kind === "trade") && (
                 <div style={{ marginBottom: 12 }}>
                   <Field label={kind + " name"}>
                     <input className="cb-input" value={draft.name || ""}
                       onChange={e => setDraft(Object.assign({}, draft, { name: e.target.value }))} />
                   </Field>
+                  {kind === "project" && (
+                    <div className="form-row-2" style={{ marginTop: 12 }}>
+                      <Field label="Start date">
+                        <input className="cb-input" type="date" value={draft.start_date || ""}
+                          onChange={e => setDraft(Object.assign({}, draft, { start_date: e.target.value }))} />
+                      </Field>
+                      <Field label="End date">
+                        <input className="cb-input" type="date" value={draft.end_date || ""}
+                          onChange={e => setDraft(Object.assign({}, draft, { end_date: e.target.value }))} />
+                      </Field>
+                    </div>
+                  )}
                   {kind === "project" && hasGrid && (
                     <div style={{ marginTop: 14 }}>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>
-                        STARTING MANPOWER
-                      </div>
-                      <ManpowerGrid rows={draft.rows} periods={draft.periods || []} onChange={setGridValue} />
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>STARTING MANPOWER</div>
+                      <ManpowerGrid rows={gridRows} periods={draft.periods || []} onChange={setGridValue} />
                     </div>
                   )}
                 </div>
@@ -607,7 +618,7 @@
 
               {kind === "manpower" && hasGrid && (
                 <div style={{ marginBottom: 12 }}>
-                  <ManpowerGrid rows={draft.rows} periods={draft.periods || []} onChange={setGridValue} />
+                  <ManpowerGrid rows={gridRows} periods={draft.periods || []} onChange={setGridValue} />
                 </div>
               )}
 
@@ -621,9 +632,7 @@
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "96px 1fr 1fr", gap: 8, marginBottom: 6 }}>
                     <div></div>
-                    <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>
-                      {r.action === "edit" ? "CURRENT" : ""}
-                    </div>
+                    <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>{r.action === "edit" ? "CURRENT" : ""}</div>
                     <div style={{ fontSize: 11, color: "#A4621A", fontFamily: "'JetBrains Mono', monospace" }}>REQUESTED</div>
                   </div>
                   {ROSTER_FIELDS.map(f => {
@@ -634,16 +643,9 @@
                     return (
                       <div key={f} style={{ display: "grid", gridTemplateColumns: "96px 1fr 1fr", gap: 8, alignItems: "center", padding: "3px 0" }}>
                         <div style={{ color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{FIELD_LABELS[f]}</div>
-                        <div style={{ fontSize: 12, color: "#5A5444" }}>
-                          {r.action === "edit" ? (cur || <span style={{ color: "#C9C2AC" }}>—</span>) : null}
-                        </div>
-                        <input className="cb-input"
-                          type={DATE_FIELDS.indexOf(f) >= 0 ? "date" : "text"}
-                          style={{
-                            fontSize: 12, padding: "6px 9px",
-                            borderColor: changed ? "#C9821F" : "#C9C2AC",
-                            background: changed ? "#FDF3E3" : "#FFFEFA",
-                          }}
+                        <div style={{ fontSize: 12, color: "#5A5444" }}>{r.action === "edit" ? (cur || <span style={{ color: "#C9C2AC" }}>—</span>) : null}</div>
+                        <input className="cb-input" type={DATE_FIELDS.indexOf(f) >= 0 ? "date" : "text"}
+                          style={{ fontSize: 12, padding: "6px 9px", borderColor: changed ? "#C9821F" : "#C9C2AC", background: changed ? "#FDF3E3" : "#FFFEFA" }}
                           value={draft[f] || ""}
                           onChange={e => setDraft(Object.assign({}, draft, { [f]: e.target.value }))} />
                       </div>
@@ -652,17 +654,9 @@
                 </div>
               )}
 
-              {overAlloc && (
-                <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", border: "1px solid #C98787", borderRadius: 3, padding: "8px 12px", marginBottom: 12 }}>
-                  Trade lines add up to more than the total. Correct that before approving.
-                </div>
-              )}
-
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
                 {edited && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "8px 14px" }} onClick={() => setDraft(clone(original))}>Reset changes</button>}
-                <button className="cb-btn-approve" disabled={overAlloc} onClick={() => onApprove(r, draft)}>
-                  {edited ? "Approve with edits" : "Approve"}
-                </button>
+                <button className="cb-btn-approve" onClick={() => onApprove(r, draft)}>{edited ? "Approve with edits" : "Approve"}</button>
                 <button className="cb-btn-danger" style={{ padding: "8px 14px", fontSize: 13 }} onClick={() => onReject(r.id, r)}>Reject</button>
               </div>
             </div>
@@ -686,21 +680,19 @@
       );
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  CHARTS
-    // ══════════════════════════════════════════════════════════════════════════
+    // ── Charts ────────────────────────────────────────────────────────────────
 
     function GroupedBars({ series, periods }) {
-      const W = 640, H = 190, padL = 46, padB = 34, padT = 14, padR = 10;
+      const W = 860, H = 200, padL = 46, padB = 34, padT = 14, padR = 10;
       const max = Math.max(1, ...series.reduce((a, r) => a.concat(r.values), []));
       const plotW = W - padL - padR, plotH = H - padB - padT;
       const groupW = plotW / Math.max(1, periods.length);
-      const barW = Math.min(46, (groupW - 16) / Math.max(1, series.length));
+      const barW = Math.min(34, (groupW - 10) / Math.max(1, series.length));
       const COLORS = ["#1F4E78", "#3E6F5C", "#C9821F", "#7A3B3B", "#5A5444", "#2E6394"];
 
       return (
         <div style={{ overflowX: "auto" }}>
-          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 420, height: "auto", display: "block" }}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 560, height: "auto", display: "block" }}>
             {[0, 0.5, 1].map(f => {
               const y = padT + plotH - f * plotH;
               return (
@@ -720,16 +712,16 @@
                     const x = gx + (groupW - barW * series.length) / 2 + ri * barW;
                     return (
                       <g key={r.name}>
-                        <rect x={x} y={padT + plotH - h} width={Math.max(2, barW - 3)} height={h}
+                        <rect x={x} y={padT + plotH - h} width={Math.max(2, barW - 2)} height={h}
                           fill={COLORS[ri % COLORS.length]} opacity={r.faded ? 0.4 : 1} />
                         {v > 0 && (
-                          <text x={x + (barW - 3) / 2} y={padT + plotH - h - 4} textAnchor="middle"
-                            fontSize="10" fill="#5A5444" fontFamily="'JetBrains Mono', monospace">{v}</text>
+                          <text x={x + (barW - 2) / 2} y={padT + plotH - h - 4} textAnchor="middle"
+                            fontSize="9" fill="#5A5444" fontFamily="'JetBrains Mono', monospace">{v}</text>
                         )}
                       </g>
                     );
                   })}
-                  <text x={gx + groupW / 2} y={H - padB + 16} textAnchor="middle" fontSize="10"
+                  <text x={gx + groupW / 2} y={H - padB + 16} textAnchor="middle" fontSize="9"
                     fill="#5A5444" fontFamily="'JetBrains Mono', monospace">{p.short}</text>
                 </g>
               );
@@ -751,18 +743,16 @@
 
     function ProjectTrendChart({ actuals, forecast, periods }) {
       const hist = actuals.slice().sort((a, b) => String(a.recorded_on).localeCompare(String(b.recorded_on)));
-      const points = hist.map(a => ({ label: a.recorded_on, value: a.headcount, actual: true }));
+      const points = hist.map(a => ({ label: String(a.recorded_on).slice(0, 10), value: a.headcount, actual: true }));
       periods.slice(1).forEach(p => points.push({ label: p.date, value: forecast[p.key] || 0, actual: false }));
 
       if (points.length < 2) {
-        return (
-          <div style={{ fontSize: 12, color: "#8A8270", padding: "6px 0" }}>
-            Not enough history yet — the curve appears once this project has been updated on more than one day.
-          </div>
-        );
+        return <div style={{ fontSize: 12, color: "#8A8270", padding: "6px 0" }}>
+          Not enough history yet — the curve appears once this project has been updated on more than one day.
+        </div>;
       }
 
-      const W = 560, H = 150, padL = 36, padB = 26, padT = 12, padR = 10;
+      const W = 720, H = 150, padL = 36, padB = 26, padT = 12, padR = 10;
       const plotW = W - padL - padR, plotH = H - padB - padT;
       const max = Math.max(1, ...points.map(p => p.value));
       const xAt = i => padL + (i / (points.length - 1)) * plotW;
@@ -774,7 +764,7 @@
 
       return (
         <div style={{ overflowX: "auto" }}>
-          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 360, height: "auto", display: "block" }}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 420, height: "auto", display: "block" }}>
             {[0, 0.5, 1].map(f => {
               const y = padT + plotH - f * plotH;
               return (
@@ -786,9 +776,7 @@
             })}
             {lastActual >= 1 && <polyline points={solid} fill="none" stroke="#1F4E78" strokeWidth="2" />}
             <polyline points={dashed} fill="none" stroke="#C9821F" strokeWidth="2" strokeDasharray="5 4" />
-            {points.map((p, i) => (
-              <circle key={i} cx={xAt(i)} cy={yAt(p.value)} r="3" fill={p.actual ? "#1F4E78" : "#C9821F"} />
-            ))}
+            {points.map((p, i) => <circle key={i} cx={xAt(i)} cy={yAt(p.value)} r="3" fill={p.actual ? "#1F4E78" : "#C9821F"} />)}
             <text x={padL} y={H - 8} fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">{points[0].label}</text>
             <text x={W - padR} y={H - 8} textAnchor="end" fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">{points[points.length - 1].label}</text>
           </svg>
@@ -800,41 +788,42 @@
       );
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  MANPOWER — VISITOR VIEW
-    // ══════════════════════════════════════════════════════════════════════════
+    // ── Manpower: visitor ─────────────────────────────────────────────────────
 
-    // Visitors read from manpower_totals, a view exposing project totals only.
-    // The underlying manpower table is closed to them at the policy level, so
-    // trade detail and history are unreachable rather than merely hidden.
+    // Reads manpower_summary, which rolls headcount up across every active
+    // project. No project is identifiable, and the manpower table itself is
+    // closed to visitors at the policy level.
     function VisitorManpower() {
-      const [projects, setProjects] = useState([]);
-      const [totals, setTotals] = useState([]);
+      const [trades, setTrades] = useState([]);
+      const [summary, setSummary] = useState([]);
       const [loading, setLoading] = useState(true);
       const periods = useMemo(() => computePeriods(), []);
 
       useEffect(() => {
         let cancelled = false;
         (async () => {
-          const [pRes, tRes] = await Promise.all([
-            sb.from("projects").select("id, name").eq("status", "approved").order("name"),
-            sb.from("manpower_totals").select("*"),
+          const [tRes, sRes] = await Promise.all([
+            sb.from("trades").select("id, name").eq("status", "approved").order("name"),
+            sb.from("manpower_summary").select("*"),
           ]);
           if (cancelled) return;
-          setProjects(pRes.data || []);
-          setTotals(tRes.data || []);
+          setTrades(tRes.data || []);
+          setSummary(sRes.data || []);
           setLoading(false);
         })();
         return () => { cancelled = true; };
       }, []);
 
-      const at = (projectId, periodKey) => {
-        const row = totals.find(t => t.project_id === projectId && (t.period_date || "now") === periodKey);
+      const at = (tradeId, periodKey) => {
+        const row = summary.find(s =>
+          (s.trade_id == null ? null : s.trade_id) === (tradeId == null ? null : tradeId) &&
+          periodKeyOf(s) === periodKey);
         return row ? row.headcount : 0;
       };
 
-      const grandTotals = periods.map(p =>
-        projects.reduce((s, proj) => s + at(proj.id, p.key), 0));
+      const totals = periods.map(p => at(null, p.key));
+      const activeTrades = trades.filter(t => periods.some(p => at(t.id, p.key) > 0));
+      const series = activeTrades.map(t => ({ name: t.name, values: periods.map(p => at(t.id, p.key)) }));
 
       if (loading) return (
         <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
@@ -842,44 +831,55 @@
         </div>
       );
 
-      if (projects.length === 0) return (
+      if (summary.length === 0) return (
         <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 40, textAlign: "center", color: "#8A8270" }}>
-          No projects on the board yet.
+          No manpower has been entered yet.
         </div>
       );
 
       return (
         <div>
-          <div className="note-bar">
-            Visitor access — total manpower only.
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 18 }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 40, fontWeight: 600, color: "#1F4E78" }}>{totals[0]}</div>
+            <div style={{ fontSize: 13, color: "#5A5444" }}>on site now</div>
           </div>
 
           <div style={{ marginBottom: 24 }}>
-            <div className="section-title">Total Manpower</div>
+            <div className="section-title">Manpower by Trade</div>
             <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "16px 16px 10px" }}>
-              <GroupedBars series={[{ name: "All projects", values: grandTotals }]} periods={periods} />
+              <GroupedBars series={series.length ? series : [{ name: "Total", values: totals }]} periods={periods} />
             </div>
           </div>
 
-          <div className="section-title">By Project</div>
           <div style={{ overflowX: "auto", border: "1px solid #D8D2BF", borderRadius: 3 }}>
             <table className="roll-table">
               <thead>
                 <tr>
-                  <th>Project</th>
-                  {periods.map(p => <th key={p.key}>{p.label.toUpperCase()}</th>)}
+                  <th>Trade</th>
+                  {periods.map(p => <th key={p.key}>{p.short}</th>)}
+                  <th>NET</th>
                 </tr>
               </thead>
               <tbody>
-                {projects.map(proj => (
-                  <tr key={proj.id}>
-                    <td>{proj.name}</td>
-                    {periods.map(p => <td key={p.key}>{at(proj.id, p.key)}</td>)}
-                  </tr>
-                ))}
+                {activeTrades.map(t => {
+                  const vals = periods.map(p => at(t.id, p.key));
+                  const delta = vals[vals.length - 1] - vals[0];
+                  return (
+                    <tr key={t.id}>
+                      <td>{t.name}</td>
+                      {vals.map((v, i) => <td key={i}>{v}</td>)}
+                      <td>{delta === 0 ? <span style={{ color: "#9A9381" }}>—</span> :
+                        <span className={delta > 0 ? "pill-up" : "pill-down"}>{delta > 0 ? "+" : ""}{delta}</span>}</td>
+                    </tr>
+                  );
+                })}
                 <tr>
-                  <td style={{ fontWeight: 600 }}>All projects</td>
-                  {grandTotals.map((v, i) => <td key={i} style={{ fontWeight: 600 }}>{v}</td>)}
+                  <td style={{ fontWeight: 600 }}>Total</td>
+                  {totals.map((v, i) => <td key={i} style={{ fontWeight: 600 }}>{v}</td>)}
+                  <td>{totals[totals.length - 1] - totals[0] === 0 ? <span style={{ color: "#9A9381" }}>—</span> :
+                    <span className={totals[totals.length - 1] - totals[0] > 0 ? "pill-up" : "pill-down"}>
+                      {totals[totals.length - 1] - totals[0] > 0 ? "+" : ""}{totals[totals.length - 1] - totals[0]}
+                    </span>}</td>
                 </tr>
               </tbody>
             </table>
@@ -888,72 +888,58 @@
       );
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  MANPOWER — FULL VIEW
-    // ══════════════════════════════════════════════════════════════════════════
+    // ── Manpower: request modal ───────────────────────────────────────────────
 
     function ProjectRequestModal({ trades, periods, saving, onCancel, onSubmit }) {
       const [name, setName] = useState("");
+      const [startDate, setStartDate] = useState("");
+      const [endDate, setEndDate] = useState("");
       const [picked, setPicked] = useState([]);
       const [values, setValues] = useState({});
 
-      const gridRows = (() => {
-        const mk = (label, tradeId) => ({
-          label, trade_id: tradeId,
-          values: periods.reduce((o, p) => {
-            o[p.key] = numOf((values[tradeId === null ? "total" : tradeId] || {})[p.key]);
-            return o;
-          }, {}),
-        });
-        return [mk("Total", null)].concat(picked.map(id => {
-          const t = trades.find(x => x.id === id);
-          return mk(t ? t.name : "Trade " + id, id);
-        }));
-      })();
+      const gridRows = picked.map(id => {
+        const t = trades.find(x => x.id === id);
+        return {
+          label: t ? t.name : "Trade " + id, trade_id: id,
+          values: periods.reduce((o, p) => { o[p.key] = numOf((values[id] || {})[p.key]); return o; }, {}),
+        };
+      });
 
-      const over = gridOverAllocated(gridRows, periods);
+      const datesBad = startDate && endDate && endDate < startDate;
 
       function setVal(rowIndex, periodKey, v) {
-        const row = gridRows[rowIndex];
-        const key = row.trade_id === null ? "total" : row.trade_id;
-        setValues(s => Object.assign({}, s, { [key]: Object.assign({}, s[key], { [periodKey]: v }) }));
+        const id = gridRows[rowIndex].trade_id;
+        setValues(s => Object.assign({}, s, { [id]: Object.assign({}, s[id], { [periodKey]: v }) }));
       }
 
       return (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()}>
-          <div className="modal-box" style={{ maxWidth: 560 }}>
-            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 14 }}>
-              Request new project
-            </div>
+          <div className="modal-box" style={{ maxWidth: 680 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 14 }}>Request new project</div>
+
             <Field label="Project name">
               <input className="cb-input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Dry Creek WTP" />
             </Field>
-            <div style={{ fontSize: 12, color: "#7A7461", marginTop: 8, lineHeight: 1.5 }}>
-              Spell it exactly as it should appear everywhere. An Admin checks the name and
-              can correct these numbers before approving.
+
+            <div className="form-row-2" style={{ marginTop: 12 }}>
+              <Field label="Start date"><input className="cb-input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></Field>
+              <Field label="End date"><input className="cb-input" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></Field>
             </div>
+            {datesBad && <div style={{ fontSize: 12, color: "#9A3C3C", marginTop: 8 }}>End date is before the start date.</div>}
 
             <div style={{ marginTop: 18 }}>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>
-                TRADES ON THIS PROJECT
-              </div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>TRADES ON THIS PROJECT</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {trades.map(t => {
                   const on = picked.indexOf(t.id) >= 0;
                   return (
                     <button key={t.id} className="trade-toggle"
                       onClick={() => setPicked(on ? picked.filter(x => x !== t.id) : picked.concat([t.id]))}
-                      style={{
-                        background: on ? "#3E6F5C" : "#FFFEFA", color: on ? "#F7F4EC" : "#5A5444",
-                        border: on ? "1px solid #3E6F5C" : "1px solid #C9C2AC",
-                      }}>
+                      style={{ background: on ? "#3E6F5C" : "#FFFEFA", color: on ? "#F7F4EC" : "#5A5444", border: on ? "1px solid #3E6F5C" : "1px solid #C9C2AC" }}>
                       {on ? "✓ " : "+ "}{t.name}
                     </button>
                   );
                 })}
-              </div>
-              <div style={{ fontSize: 12, color: "#7A7461", marginTop: 8 }}>
-                Pick only the trades this project actually uses. More can be added later.
               </div>
             </div>
 
@@ -962,15 +948,10 @@
               <ManpowerGrid rows={gridRows} periods={periods} onChange={setVal} />
             </div>
 
-            {over && (
-              <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", border: "1px solid #C98787", borderRadius: 3, padding: "8px 12px", marginTop: 12 }}>
-                Trade lines add up to more than the total.
-              </div>
-            )}
-
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
               <button className="cb-btn-ghost" onClick={onCancel}>Cancel</button>
-              <button className="cb-btn" disabled={!name.trim() || saving || over} onClick={() => onSubmit(name.trim(), gridRows)}>
+              <button className="cb-btn" disabled={!name.trim() || saving || datesBad}
+                onClick={() => onSubmit(name.trim(), startDate || null, endDate || null, gridRows)}>
                 {saving ? "Submitting…" : "Submit request"}
               </button>
             </div>
@@ -979,7 +960,9 @@
       );
     }
 
-    function ManpowerView({ user, role, notify, onRequestSubmitted }) {
+    // ── Manpower: full view ───────────────────────────────────────────────────
+
+    function ManpowerView({ user, role, fullName, notify, onRequestSubmitted }) {
       const isOwner = isOwnerRole(role);
       const isAdmin = isManagerRole(role);
 
@@ -988,27 +971,33 @@
       const [assignments, setAssignments] = useState([]);
       const [rows, setRows] = useState([]);
       const [actuals, setActuals] = useState([]);
+      const [comments, setComments] = useState([]);
       const [approvalRequired, setApprovalRequired] = useState(false);
       const [members, setMembers] = useState([]);
       const [loading, setLoading] = useState(true);
-      const [expanded, setExpanded] = useState(null);
+      const [expanded, setExpanded] = useState(() => new Set());
+      const [autoExpanded, setAutoExpanded] = useState(false);
+      const [showDone, setShowDone] = useState(false);
       const [drafts, setDrafts] = useState({});
       const [addedTrades, setAddedTrades] = useState({});
+      const [commentDraft, setCommentDraft] = useState({});
       const [saving, setSaving] = useState(false);
       const [showProjectModal, setShowProjectModal] = useState(false);
       const [askTrade, setAskTrade] = useState(false);
       const [newTradeName, setNewTradeName] = useState("");
       const [showAssign, setShowAssign] = useState(false);
+      const [confirmDone, setConfirmDone] = useState(null);
 
       const periods = useMemo(() => computePeriods(), []);
 
       const load = useCallback(async () => {
-        const [pRes, tRes, aRes, mRes, acRes, sRes] = await Promise.all([
-          sb.from("projects").select("*").eq("status", "approved").order("name"),
+        const [pRes, tRes, aRes, mRes, acRes, cRes, sRes] = await Promise.all([
+          sb.from("projects").select("*").in("status", ["approved", "completed"]).order("name"),
           sb.from("trades").select("*").eq("status", "approved").order("name"),
           sb.from("project_assignments").select("*"),
           sb.from("manpower").select("*"),
           sb.from("manpower_actuals").select("*").order("recorded_on", { ascending: true }),
+          sb.from("project_comments").select("*").order("created_at", { ascending: false }),
           sb.from("app_settings").select("*").eq("key", "manpower_approval_required").maybeSingle(),
         ]);
         setProjects(pRes.data || []);
@@ -1016,6 +1005,7 @@
         setAssignments(aRes.data || []);
         setRows(mRes.data || []);
         setActuals(acRes.data || []);
+        setComments(cRes.data || []);
         setApprovalRequired(sRes.data?.value === "true");
         if (isAdmin) {
           const { data: us } = await sb.from("user_roles").select("*").eq("status", "approved").order("full_name");
@@ -1032,6 +1022,7 @@
           .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => load())
           .on("postgres_changes", { event: "*", schema: "public", table: "trades" }, () => load())
           .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => load())
+          .on("postgres_changes", { event: "*", schema: "public", table: "project_comments" }, () => load())
           .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, () => load())
           .subscribe();
         return () => { sb.removeChannel(ch); };
@@ -1042,22 +1033,43 @@
         [assignments, user.id]
       );
 
+      // A member lands on their own projects already open; everything else stays
+      // collapsed. Runs once so it never fights a manual collapse.
+      useEffect(() => {
+        if (autoExpanded || loading || isAdmin) return;
+        if (myProjectIds.size === 0) return;
+        setExpanded(new Set(myProjectIds));
+        setAutoExpanded(true);
+      }, [myProjectIds, isAdmin, loading, autoExpanded]);
+
+      const activeProjects = useMemo(() => projects.filter(p => p.status === "approved"), [projects]);
+      const doneProjects   = useMemo(() => projects.filter(p => p.status === "completed"), [projects]);
+
+      function toggleExpanded(id) {
+        setExpanded(s => {
+          const next = new Set(s);
+          if (next.has(id)) next.delete(id); else next.add(id);
+          return next;
+        });
+      }
+
       // Mirrors can_write_manpower() in the database.
-      function accessFor(projectId) {
+      function accessFor(proj) {
+        if (proj.status === "completed") return "view";
         if (isAdmin) return "write";
-        if (!myProjectIds.has(projectId)) return "view";
+        if (!myProjectIds.has(proj.id)) return "view";
         return approvalRequired ? "request" : "write";
       }
+      const canComment = (projectId) => isAdmin || myProjectIds.has(projectId);
 
       const cell = useCallback((projectId, tradeId, periodKey) => {
         return rows.find(x =>
           x.project_id === projectId &&
           (x.trade_id == null ? null : x.trade_id) === (tradeId == null ? null : tradeId) &&
-          (x.period_date || "now") === periodKey) || null;
+          periodKeyOf(x) === periodKey) || null;
       }, [rows]);
 
-      // A trade is "on" a project when a manpower row exists for it. Newly added
-      // trades live in local state until the first save creates those rows.
+      // A trade is "on" a project when a manpower row exists for it.
       const tradesOn = useCallback((projectId) => {
         const ids = new Set();
         rows.forEach(r => { if (r.project_id === projectId && r.trade_id != null) ids.add(r.trade_id); });
@@ -1066,12 +1078,13 @@
       }, [rows, trades, addedTrades]);
 
       const activeTrades = useMemo(() => {
+        const live = new Set(activeProjects.map(p => p.id));
         const ids = new Set();
-        rows.forEach(r => { if (r.trade_id != null) ids.add(r.trade_id); });
+        rows.forEach(r => { if (r.trade_id != null && live.has(r.project_id)) ids.add(r.trade_id); });
         return trades.filter(t => ids.has(t.id));
-      }, [rows, trades]);
+      }, [rows, trades, activeProjects]);
 
-      const draftKey = (projectId, tradeId, periodKey) => `${projectId}|${tradeId == null ? "T" : tradeId}|${periodKey}`;
+      const draftKey = (projectId, tradeId, periodKey) => `${projectId}|${tradeId}|${periodKey}`;
 
       function valueOf(projectId, tradeId, periodKey) {
         const k = draftKey(projectId, tradeId, periodKey);
@@ -1079,22 +1092,26 @@
         const r = cell(projectId, tradeId, periodKey);
         return r ? String(r.headcount) : "";
       }
-
       function setValue(projectId, tradeId, periodKey, v) {
         if (!digitsOnly(v)) return;
         setDrafts(d => Object.assign({}, d, { [draftKey(projectId, tradeId, periodKey)]: v }));
       }
 
-      function unspecifiedFor(projectId, periodKey) {
-        const total = numOf(valueOf(projectId, null, periodKey));
-        const detailed = tradesOn(projectId).reduce((s, t) => s + numOf(valueOf(projectId, t.id, periodKey)), 0);
-        return total - detailed;
+      // Total shown on a card is the sum of its trade lines. Projects that only
+      // ever had a typed total (before totals became derived) fall back to the
+      // stored value so their history still reads correctly.
+      function totalFor(projectId, periodKey) {
+        const on = tradesOn(projectId);
+        if (on.length === 0) {
+          const stored = cell(projectId, null, periodKey);
+          return stored ? stored.headcount : 0;
+        }
+        return on.reduce((s, t) => s + numOf(valueOf(projectId, t.id, periodKey)), 0);
       }
 
       const projectDirty = (projectId) =>
         Object.keys(drafts).some(k => k.indexOf(projectId + "|") === 0) ||
         (addedTrades[projectId] || []).length > 0;
-      const overAllocated = (projectId) => periods.some(p => unspecifiedFor(projectId, p.key) < 0);
 
       function lastUpdatedFor(projectId) {
         const mine = rows.filter(r => r.project_id === projectId && r.updated_at).map(r => r.updated_at);
@@ -1123,14 +1140,13 @@
 
       function collectCells(projectId) {
         const out = [];
-        const ids = [null].concat(tradesOn(projectId).map(t => t.id));
-        ids.forEach(tradeId => {
+        tradesOn(projectId).forEach(t => {
           periods.forEach(p => {
-            const k = draftKey(projectId, tradeId, p.key);
+            const k = draftKey(projectId, t.id, p.key);
             if (!(k in drafts)) return;
             out.push({
-              project_id: projectId, trade_id: tradeId, period_date: p.date,
-              headcount: numOf(drafts[k]), existing: cell(projectId, tradeId, p.key),
+              project_id: projectId, trade_id: t.id, period_date: p.date,
+              headcount: numOf(drafts[k]), existing: cell(projectId, t.id, p.key),
             });
           });
         });
@@ -1138,10 +1154,6 @@
       }
 
       async function saveProject(projectId) {
-        if (overAllocated(projectId)) {
-          notify("Trade lines add up to more than the total — fix that first.", "error");
-          return;
-        }
         const cells = collectCells(projectId);
         if (cells.length === 0) return;
         setSaving(true);
@@ -1172,27 +1184,21 @@
       }
 
       function buildPayloadRows(projectId) {
-        const mk = (label, tradeId) => ({
-          label, trade_id: tradeId,
-          values: periods.reduce((o, p) => { o[p.key] = numOf(valueOf(projectId, tradeId, p.key)); return o; }, {}),
-        });
-        return [mk("Total", null)].concat(tradesOn(projectId).map(t => mk(t.name, t.id)));
+        return tradesOn(projectId).map(t => ({
+          label: t.name, trade_id: t.id,
+          values: periods.reduce((o, p) => { o[p.key] = numOf(valueOf(projectId, t.id, p.key)); return o; }, {}),
+        }));
       }
 
       async function submitProjectRequest(projectId) {
-        if (overAllocated(projectId)) {
-          notify("Trade lines add up to more than the total — fix that first.", "error");
-          return;
-        }
         const project = projects.find(p => p.id === projectId);
         setSaving(true);
         const { error } = await sb.from("requests").insert({
           kind: "manpower", action: "edit", status: "pending",
-          requester_id: user.id, requester_email: user.email,
+          requester_id: user.id, requester_email: user.email, requester_full_name: fullName || null,
           payload: JSON.stringify({
-            project_id: projectId,
-            project_name: project ? project.name : "",
-            periods: periods.map(p => ({ key: p.key, date: p.date, label: p.label })),
+            project_id: projectId, project_name: project ? project.name : "",
+            periods: periods.map(p => ({ key: p.key, date: p.date, label: p.label, short: p.short })),
             rows: buildPayloadRows(projectId),
           }),
         });
@@ -1203,14 +1209,14 @@
         if (onRequestSubmitted) onRequestSubmitted();
       }
 
-      async function submitNewProject(name, gridRows) {
+      async function submitNewProject(name, startDate, endDate, gridRows) {
         setSaving(true);
         const { error } = await sb.from("requests").insert({
           kind: "project", action: "add", status: "pending",
-          requester_id: user.id, requester_email: user.email,
+          requester_id: user.id, requester_email: user.email, requester_full_name: fullName || null,
           payload: JSON.stringify({
-            name,
-            periods: periods.map(p => ({ key: p.key, date: p.date, label: p.label })),
+            name, start_date: startDate, end_date: endDate,
+            periods: periods.map(p => ({ key: p.key, date: p.date, label: p.label, short: p.short })),
             rows: gridRows,
           }),
         });
@@ -1227,7 +1233,7 @@
         setSaving(true);
         const { error } = await sb.from("requests").insert({
           kind: "trade", action: "add", status: "pending",
-          requester_id: user.id, requester_email: user.email,
+          requester_id: user.id, requester_email: user.email, requester_full_name: fullName || null,
           payload: JSON.stringify({ name }),
         });
         setSaving(false);
@@ -1235,6 +1241,37 @@
         setAskTrade(false); setNewTradeName("");
         notify("New trade submitted for approval");
         if (onRequestSubmitted) onRequestSubmitted();
+      }
+
+      async function setProjectStatus(proj, status) {
+        const patch = { status };
+        patch.completed_at = status === "completed" ? new Date().toISOString() : null;
+        const { error } = await sb.from("projects").update(patch).eq("id", proj.id);
+        setConfirmDone(null);
+        if (error) { notify("Could not update the project: " + error.message, "error"); return; }
+        notify(status === "completed" ? `${proj.name} marked complete` : `${proj.name} reopened`);
+        load();
+      }
+
+      async function postComment(projectId) {
+        const body = (commentDraft[projectId] || "").trim();
+        if (!body) return;
+        setSaving(true);
+        const { error } = await sb.from("project_comments").insert({
+          project_id: projectId, user_id: user.id,
+          author_name: fullName || user.email, body,
+        });
+        setSaving(false);
+        if (error) { notify("Comment failed: " + error.message, "error"); return; }
+        setCommentDraft(d => Object.assign({}, d, { [projectId]: "" }));
+        load();
+      }
+
+      async function deleteComment(c) {
+        const { error } = await sb.from("project_comments").delete().eq("id", c.id);
+        if (error) { notify("Delete failed: " + error.message, "error"); return; }
+        notify("Comment deleted");
+        load();
       }
 
       async function toggleApproval() {
@@ -1249,56 +1286,52 @@
 
       async function toggleAssignment(userId, projectId, on) {
         if (on) {
-          const { error } = await sb.from("project_assignments")
-            .insert({ user_id: userId, project_id: projectId, assigned_by: user.id });
+          const { error } = await sb.from("project_assignments").insert({ user_id: userId, project_id: projectId, assigned_by: user.id });
           if (error) { notify("Assign failed: " + error.message, "error"); return; }
         } else {
-          const { error } = await sb.from("project_assignments")
-            .delete().eq("user_id", userId).eq("project_id", projectId);
+          const { error } = await sb.from("project_assignments").delete().eq("user_id", userId).eq("project_id", projectId);
           if (error) { notify("Unassign failed: " + error.message, "error"); return; }
         }
         load();
       }
 
-      // ── Rollup and analytics ────────────────────────────────────────────────
+      // ── Rollup and analytics — active projects only ─────────────────────────
 
       const rollup = useMemo(() => {
-        const byTrade = {}, unspecified = {}, byProject = {};
+        const byTrade = {}, byProject = {}, totals = {};
         activeTrades.forEach(t => { byTrade[t.id] = {}; periods.forEach(p => { byTrade[t.id][p.key] = 0; }); });
-        periods.forEach(p => { unspecified[p.key] = 0; });
+        periods.forEach(p => { totals[p.key] = 0; });
 
-        projects.forEach(proj => {
-          byProject[proj.id] = { total: {}, trades: {} };
-          activeTrades.forEach(t => { byProject[proj.id].trades[t.id] = {}; });
+        activeProjects.forEach(proj => {
+          byProject[proj.id] = {};
+          activeTrades.forEach(t => { byProject[proj.id][t.id] = {}; });
           periods.forEach(p => {
-            const tc = cell(proj.id, null, p.key);
-            const total = tc ? tc.headcount : 0;
-            byProject[proj.id].total[p.key] = total;
             let detailed = 0;
             activeTrades.forEach(t => {
               const c = cell(proj.id, t.id, p.key);
               const v = c ? c.headcount : 0;
-              byProject[proj.id].trades[t.id][p.key] = v;
+              byProject[proj.id][t.id][p.key] = v;
               byTrade[t.id][p.key] += v;
               detailed += v;
             });
-            unspecified[p.key] += Math.max(0, total - detailed);
+            const storedTotal = cell(proj.id, null, p.key);
+            totals[p.key] += Math.max(detailed, storedTotal ? storedTotal.headcount : 0);
           });
         });
-        return { byTrade, unspecified, byProject };
-      }, [projects, activeTrades, periods, cell]);
+        return { byTrade, byProject, totals };
+      }, [activeProjects, activeTrades, periods, cell]);
 
       // Each period is compared against the PREVIOUS period, not against today.
       // Comparing everything to today double-counts: a hire made in month one
-      // would still show as an outstanding need in month two.
+      // would still read as an outstanding need in month two.
       const moves = useMemo(() => {
         const out = [];
         for (let i = 1; i < periods.length; i++) {
           const prev = periods[i - 1], p = periods[i];
           activeTrades.forEach(t => {
             const releasing = [], needing = [];
-            projects.forEach(proj => {
-              const tr = rollup.byProject[proj.id] ? rollup.byProject[proj.id].trades[t.id] : null;
+            activeProjects.forEach(proj => {
+              const tr = rollup.byProject[proj.id] ? rollup.byProject[proj.id][t.id] : null;
               if (!tr) return;
               const delta = (tr[p.key] || 0) - (tr[prev.key] || 0);
               if (delta < 0) releasing.push({ name: proj.name, count: -delta });
@@ -1309,7 +1342,6 @@
             const totalRel = releasing.reduce((s, r) => s + r.count, 0);
             const totalNeed = needing.reduce((s, r) => s + r.count, 0);
 
-            // Greedy pairing, biggest release against biggest need.
             const pool = releasing.map(r => Object.assign({}, r)).sort((a, b) => b.count - a.count);
             const want = needing.map(r => Object.assign({}, r)).sort((a, b) => b.count - a.count);
             const transfers = [];
@@ -1323,33 +1355,18 @@
             });
 
             out.push({
-              period: p, from: prev, trade: t, totalRel, totalNeed, transfers,
-              releasing, needing,
+              period: p, from: prev, trade: t, totalRel, totalNeed, transfers, releasing,
               hire: Math.max(0, totalNeed - totalRel),
               surplus: Math.max(0, totalRel - totalNeed),
             });
           });
         }
         return out;
-      }, [projects, activeTrades, periods, rollup]);
-
-      const coverage = useMemo(() => {
-        let total = 0, detailed = 0;
-        projects.forEach(proj => {
-          const bp = rollup.byProject[proj.id];
-          if (!bp) return;
-          total += bp.total["now"] || 0;
-          activeTrades.forEach(t => { detailed += (bp.trades[t.id] || {})["now"] || 0; });
-        });
-        return total === 0 ? null : Math.round((detailed / total) * 100);
-      }, [projects, activeTrades, rollup]);
+      }, [activeProjects, activeTrades, periods, rollup]);
 
       const chartSeries = useMemo(() => {
-        const s = activeTrades.map(t => ({
-          name: t.name, values: periods.map(p => (rollup.byTrade[t.id] || {})[p.key] || 0),
-        }));
-        s.push({ name: "Unspecified", faded: true, values: periods.map(p => rollup.unspecified[p.key] || 0) });
-        return s;
+        if (activeTrades.length === 0) return [{ name: "Total", values: periods.map(p => rollup.totals[p.key] || 0) }];
+        return activeTrades.map(t => ({ name: t.name, values: periods.map(p => (rollup.byTrade[t.id] || {})[p.key] || 0) }));
       }, [activeTrades, periods, rollup]);
 
       const tradeModal = askTrade && (
@@ -1360,19 +1377,158 @@
               <input className="cb-input" value={newTradeName} onChange={e => setNewTradeName(e.target.value)}
                 placeholder="e.g. Pipefitters" onKeyDown={e => e.key === "Enter" && submitNewTrade()} />
             </Field>
-            <div style={{ fontSize: 12, color: "#7A7461", marginTop: 10, lineHeight: 1.5 }}>
-              Once approved this becomes selectable on any project. An Admin can correct the
-              spelling before approving.
-            </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
               <button className="cb-btn-ghost" onClick={() => setAskTrade(false)}>Cancel</button>
-              <button className="cb-btn" disabled={!newTradeName.trim() || saving} onClick={submitNewTrade}>
-                {saving ? "Submitting…" : "Submit"}
-              </button>
+              <button className="cb-btn" disabled={!newTradeName.trim() || saving} onClick={submitNewTrade}>{saving ? "Submitting…" : "Submit"}</button>
             </div>
           </div>
         </div>
       );
+
+      // ── Project card ────────────────────────────────────────────────────────
+
+      function renderProject(proj) {
+        const done = proj.status === "completed";
+        const access = accessFor(proj);
+        const open = expanded.has(proj.id);
+        const editable = access === "write" || access === "request";
+        const dirty = projectDirty(proj.id);
+        const updated = lastUpdatedFor(proj.id);
+        const staleDays = daysSince(updated);
+        const projActuals = actuals.filter(a => a.project_id === proj.id && a.trade_id === null);
+        const forecast = periods.reduce((o, p) => { o[p.key] = totalFor(proj.id, p.key); return o; }, {});
+        const onProject = tradesOn(proj.id);
+        const available = trades.filter(t => onProject.every(x => x.id !== t.id));
+        const projComments = comments.filter(c => c.project_id === proj.id);
+        const headPeriods = periods.slice(0, 3);
+
+        return (
+          <div key={proj.id} className={"mp-card" + (done ? " done" : "")}>
+            <div className="mp-card-head" onClick={() => toggleExpanded(proj.id)}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 600, fontSize: 15 }}>{proj.name}</span>
+                  {done && <span className="status-chip" style={{ color: "#5A5444", background: "#EDE9DC", borderColor: "#C9C2AC" }}>COMPLETE</span>}
+                  {!done && myProjectIds.has(proj.id) && !isAdmin && <span className="status-chip" style={{ color: "#1F4E78", background: "#E1E9F0", borderColor: "#2E6394" }}>YOURS</span>}
+                </div>
+                <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", marginTop: 3,
+                  color: staleDays === null ? "#9A9381" : staleDays > 14 && !done ? "#9A3C3C" : "#8A8270" }}>
+                  {(proj.start_date || proj.end_date) && (fmt(proj.start_date) + " – " + fmt(proj.end_date) + " · ")}
+                  {staleDays === null ? "NEVER UPDATED" : staleDays === 0 ? "UPDATED TODAY" : `UPDATED ${staleDays}D AGO`}
+                  {access === "request" && " · SUBMITS FOR APPROVAL"}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                {headPeriods.map(p => (
+                  <div key={p.key} style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 600, color: "#1B2A33" }}>{totalFor(proj.id, p.key)}</div>
+                    <div style={{ fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: "#9A9381" }}>{p.short}</div>
+                  </div>
+                ))}
+                <span style={{ fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace" }}>{open ? "▲" : "▼"}</span>
+              </div>
+            </div>
+
+            {open && (
+              <div className="mp-card-body">
+                <div style={{ overflowX: "auto" }}>
+                  <table className="mp-grid">
+                    <thead>
+                      <tr>
+                        <th>Trade</th>
+                        {periods.map(p => <th key={p.key}>{p.short}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {onProject.length === 0 && (
+                        <tr><td colSpan={periods.length + 1} style={{ fontSize: 12, color: "#8A8270", padding: "10px 6px" }}>
+                          No trades on this project yet.{editable ? " Add one below to start tracking." : ""}
+                        </td></tr>
+                      )}
+                      {onProject.map(t => (
+                        <tr key={t.id}>
+                          <td>{t.name}</td>
+                          {periods.map(p => (
+                            <td key={p.key}>
+                              <input className="mp-num" inputMode="numeric" disabled={!editable}
+                                value={valueOf(proj.id, t.id, p.key)}
+                                onChange={e => setValue(proj.id, t.id, p.key, e.target.value)}
+                                placeholder="0" />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                      <tr className="total-row">
+                        <td>Total</td>
+                        {periods.map(p => <td key={p.key}><span className="mp-readonly">{totalFor(proj.id, p.key)}</span></td>)}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {editable && available.length > 0 && (
+                  <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270" }}>ADD TRADE</span>
+                    {available.map(t => (
+                      <button key={t.id} className="trade-toggle" onClick={() => addTradeToProject(proj.id, t.id)}
+                        style={{ background: "#FFFEFA", color: "#5A5444", border: "1px solid #C9C2AC" }}>+ {t.name}</button>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14, flexWrap: "wrap" }}>
+                  {isAdmin && !done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setConfirmDone(proj)}>Mark complete</button>}
+                  {isAdmin && done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setProjectStatus(proj, "approved")}>Reopen</button>}
+                  {editable && dirty && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => clearDrafts(proj.id)}>Discard</button>}
+                  {editable && (
+                    <button className="cb-btn" style={{ fontSize: 13, padding: "9px 16px" }} disabled={!dirty || saving}
+                      onClick={() => access === "request" ? submitProjectRequest(proj.id) : saveProject(proj.id)}>
+                      {saving ? "Saving…" : access === "request" ? "Submit for approval" : "Save"}
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ marginTop: 18, borderTop: "1px solid #EDE9DC", paddingTop: 14 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>HEADCOUNT OVER TIME</div>
+                  <ProjectTrendChart actuals={projActuals} forecast={forecast} periods={periods} />
+                </div>
+
+                <div style={{ marginTop: 18, borderTop: "1px solid #EDE9DC", paddingTop: 14 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>
+                    COMMENTS{projComments.length > 0 ? ` (${projComments.length})` : ""}
+                  </div>
+                  {canComment(proj.id) && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 4 }}>
+                      <textarea className="cb-textarea" rows={2} placeholder="Add a note…"
+                        value={commentDraft[proj.id] || ""}
+                        onChange={e => setCommentDraft(d => Object.assign({}, d, { [proj.id]: e.target.value }))} />
+                      <button className="cb-btn" style={{ fontSize: 13, padding: "9px 16px" }}
+                        disabled={!(commentDraft[proj.id] || "").trim() || saving}
+                        onClick={() => postComment(proj.id)}>Post</button>
+                    </div>
+                  )}
+                  {projComments.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "#9A9381", padding: "6px 0" }}>No comments yet.</div>
+                  ) : projComments.map(c => (
+                    <div key={c.id} className="comment">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="comment-meta">{(c.author_name || "UNKNOWN").toUpperCase()} · {fmtStamp(c.created_at)}</div>
+                        <div style={{ fontSize: 13, color: "#1B2A33", whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{c.body}</div>
+                      </div>
+                      {canComment(proj.id) && (
+                        <button onClick={() => deleteComment(c)} style={{
+                          background: "none", border: "none", cursor: "pointer", color: "#9A3C3C",
+                          fontSize: 12, padding: "2px 4px", flexShrink: 0,
+                        }}>Delete</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
 
       if (loading) return (
         <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
@@ -1399,43 +1555,31 @@
 
       return (
         <div>
-          {/* Controls */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
             <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowProjectModal(true)}>+ Request project</button>
             <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setAskTrade(true); setNewTradeName(""); }}>+ Request trade</button>
             {isAdmin && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowAssign(!showAssign)}>{showAssign ? "Hide assignments" : "Project assignments"}</button>}
-            <div style={{ marginLeft: "auto" }}>
-              {isOwner ? (
+            {isOwner && (
+              <div style={{ marginLeft: "auto" }}>
                 <button onClick={toggleApproval} style={{
                   display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
                   background: "transparent", border: "1px solid #B9B3A0", borderRadius: 3,
                   padding: "7px 12px", fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#1B2A33",
                 }}>
-                  <span style={{
-                    width: 32, height: 18, borderRadius: 99, position: "relative", display: "inline-block",
-                    background: approvalRequired ? "#3E6F5C" : "#C9C2AC",
-                  }}>
+                  <span style={{ width: 32, height: 18, borderRadius: 99, position: "relative", display: "inline-block", background: approvalRequired ? "#3E6F5C" : "#C9C2AC" }}>
                     <span style={{ position: "absolute", top: 2, left: approvalRequired ? 16 : 2, width: 14, height: 14, borderRadius: 99, background: "#fff" }} />
                   </span>
                   Approvals {approvalRequired ? "on" : "off"}
                 </button>
-              ) : (
-                <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "#8A8270" }}>
-                  {approvalRequired ? "APPROVALS ON" : "APPROVALS OFF"}
-                </span>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
-          {/* Assignments (managers) */}
           {isAdmin && showAssign && (
             <div style={{ marginBottom: 24 }}>
               <div className="section-title">Project Assignments</div>
-              <div className="note-bar">
-                A member can only submit numbers for projects assigned to them. Everyone can view every project.
-              </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {projects.map(proj => (
+                {activeProjects.map(proj => (
                   <div key={proj.id} style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "12px 16px" }}>
                     <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>{proj.name}</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -1444,10 +1588,7 @@
                         const on = assignments.some(a => a.user_id === u.user_id && a.project_id === proj.id);
                         return (
                           <button key={u.user_id} className="trade-toggle" onClick={() => toggleAssignment(u.user_id, proj.id, !on)}
-                            style={{
-                              background: on ? "#1F4E78" : "#FFFEFA", color: on ? "#F7F4EC" : "#5A5444",
-                              border: on ? "1px solid #1F4E78" : "1px solid #C9C2AC",
-                            }}>
+                            style={{ background: on ? "#1F4E78" : "#FFFEFA", color: on ? "#F7F4EC" : "#5A5444", border: on ? "1px solid #1F4E78" : "1px solid #C9C2AC" }}>
                             {on ? "✓ " : ""}{u.full_name || u.email}
                           </button>
                         );
@@ -1459,21 +1600,13 @@
             </div>
           )}
 
-          {/* Aggregate picture */}
           <div style={{ marginBottom: 24 }}>
             <div className="section-title">Total Manpower</div>
             <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "16px 16px 10px" }}>
               <GroupedBars series={chartSeries} periods={periods} />
             </div>
-            {coverage !== null && coverage < 100 && (
-              <div className="note-bar" style={{ marginTop: 8, marginBottom: 0 }}>
-                {coverage}% of current headcount is broken down by trade. Transfer matching below
-                only uses the trade-level numbers, so the rest is not counted in it.
-              </div>
-            )}
           </div>
 
-          {/* Rollup table */}
           {activeTrades.length > 0 && (
             <div style={{ marginBottom: 24 }}>
               <div className="section-title">By Trade</div>
@@ -1482,7 +1615,7 @@
                   <thead>
                     <tr>
                       <th>Trade</th>
-                      {periods.map(p => <th key={p.key}>{p.label.toUpperCase()}</th>)}
+                      {periods.map(p => <th key={p.key}>{p.short}</th>)}
                       <th>NET</th>
                     </tr>
                   </thead>
@@ -1495,16 +1628,14 @@
                         <tr key={t.id}>
                           <td>{t.name}</td>
                           {periods.map(p => <td key={p.key}>{rollup.byTrade[t.id][p.key]}</td>)}
-                          <td>
-                            {delta === 0 ? <span style={{ color: "#9A9381" }}>—</span> :
-                              <span className={delta > 0 ? "pill-up" : "pill-down"}>{delta > 0 ? "+" : ""}{delta}</span>}
-                          </td>
+                          <td>{delta === 0 ? <span style={{ color: "#9A9381" }}>—</span> :
+                            <span className={delta > 0 ? "pill-up" : "pill-down"}>{delta > 0 ? "+" : ""}{delta}</span>}</td>
                         </tr>
                       );
                     })}
                     <tr>
-                      <td style={{ color: "#8A8270" }}>Unspecified</td>
-                      {periods.map(p => <td key={p.key} style={{ color: "#8A8270" }}>{rollup.unspecified[p.key]}</td>)}
+                      <td style={{ fontWeight: 600 }}>Total</td>
+                      {periods.map(p => <td key={p.key} style={{ fontWeight: 600 }}>{rollup.totals[p.key]}</td>)}
                       <td></td>
                     </tr>
                   </tbody>
@@ -1513,12 +1644,11 @@
             </div>
           )}
 
-          {/* Analytics */}
           <div style={{ marginBottom: 24 }}>
             <div className="section-title">Moves &amp; Gaps</div>
             {moves.length === 0 ? (
               <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 28, textAlign: "center", color: "#8A8270", fontSize: 13 }}>
-                Nothing moving — every project holds steady across both periods.
+                Nothing moving — every project holds steady across the forecast.
               </div>
             ) : moves.map((m, i) => {
               const pureSurplus = m.totalNeed === 0 && m.surplus > 0;
@@ -1528,7 +1658,6 @@
                   <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "#9A9381", marginBottom: 6 }}>
                     CHANGE FROM {m.from.label.toUpperCase()}
                   </div>
-
                   {m.transfers.length > 0 && (
                     <div style={{ marginBottom: 6 }}>
                       {m.transfers.map((t, j) => (
@@ -1538,7 +1667,6 @@
                       ))}
                     </div>
                   )}
-
                   {pureSurplus && (
                     <div style={{ marginBottom: 6 }}>
                       {m.releasing.map((r, j) => (
@@ -1548,7 +1676,6 @@
                       ))}
                     </div>
                   )}
-
                   <div style={{ fontSize: 12, color: "#5A5444" }}>
                     {pureSurplus ? (
                       <strong style={{ color: "#1F4E78" }}>
@@ -1569,147 +1696,43 @@
             })}
           </div>
 
-          {/* Per-project entry */}
           <div className="section-title">Projects</div>
-          {projects.map(proj => {
-            const access = accessFor(proj.id);
-            const open = expanded === proj.id;
-            const editable = access === "write" || access === "request";
-            const dirty = projectDirty(proj.id);
-            const updated = lastUpdatedFor(proj.id);
-            const staleDays = daysSince(updated);
-            const projActuals = actuals.filter(a => a.project_id === proj.id && a.trade_id === null);
-            const forecast = periods.reduce((o, p) => { o[p.key] = numOf(valueOf(proj.id, null, p.key)); return o; }, {});
-            const onProject = tradesOn(proj.id);
-            const available = trades.filter(t => onProject.every(x => x.id !== t.id));
+          {activeProjects.map(renderProject)}
 
-            return (
-              <div key={proj.id} className="mp-card">
-                <div className="mp-card-head" onClick={() => setExpanded(open ? null : proj.id)}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 15 }}>{proj.name}</div>
-                    <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", marginTop: 3,
-                      color: staleDays === null ? "#9A9381" : staleDays > 14 ? "#9A3C3C" : "#8A8270" }}>
-                      {staleDays === null ? "NEVER UPDATED" : staleDays === 0 ? "UPDATED TODAY" : `UPDATED ${staleDays}D AGO`}
-                      {access === "view" && " · VIEW ONLY"}
-                      {access === "request" && " · SUBMITS FOR APPROVAL"}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                    {periods.map(p => (
-                      <div key={p.key} style={{ textAlign: "right" }}>
-                        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 600, color: "#1B2A33" }}>
-                          {rollup.byProject[proj.id] ? rollup.byProject[proj.id].total[p.key] : 0}
-                        </div>
-                        <div style={{ fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: "#9A9381" }}>{p.short}</div>
-                      </div>
-                    ))}
-                    <span style={{ fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace" }}>{open ? "▲" : "▼"}</span>
-                  </div>
-                </div>
-
-                {open && (
-                  <div className="mp-card-body">
-                    <div style={{ overflowX: "auto" }}>
-                      <table className="mp-grid">
-                        <thead>
-                          <tr>
-                            <th>Line</th>
-                            {periods.map(p => <th key={p.key}>{p.label.toUpperCase()}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td style={{ fontWeight: 600, color: "#1B2A33" }}>Total</td>
-                            {periods.map(p => (
-                              <td key={p.key}>
-                                <input className="mp-num" inputMode="numeric" disabled={!editable}
-                                  value={valueOf(proj.id, null, p.key)}
-                                  onChange={e => setValue(proj.id, null, p.key, e.target.value)}
-                                  placeholder="0" />
-                              </td>
-                            ))}
-                          </tr>
-                          {onProject.map(t => (
-                            <tr key={t.id}>
-                              <td>{t.name}</td>
-                              {periods.map(p => (
-                                <td key={p.key}>
-                                  <input className="mp-num" inputMode="numeric" disabled={!editable}
-                                    value={valueOf(proj.id, t.id, p.key)}
-                                    onChange={e => setValue(proj.id, t.id, p.key, e.target.value)}
-                                    placeholder="0" />
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                          {onProject.length > 0 && (
-                            <tr>
-                              <td style={{ color: "#8A8270" }}>Unspecified</td>
-                              {periods.map(p => {
-                                const u = unspecifiedFor(proj.id, p.key);
-                                return (
-                                  <td key={p.key}>
-                                    <span className="mp-readonly" style={{ color: u < 0 ? "#9A3C3C" : "#8A8270", fontWeight: u < 0 ? 600 : 400 }}>{u}</span>
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {editable && available.length > 0 && (
-                      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270" }}>ADD TRADE</span>
-                        {available.map(t => (
-                          <button key={t.id} className="trade-toggle" onClick={() => addTradeToProject(proj.id, t.id)}
-                            style={{ background: "#FFFEFA", color: "#5A5444", border: "1px solid #C9C2AC" }}>
-                            + {t.name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {onProject.length === 0 && (
-                      <div className="note-bar" style={{ marginTop: 12, marginBottom: 0 }}>
-                        No trades on this project yet — only the total is tracked. Add the trades
-                        that apply so this project counts toward transfer matching.
-                      </div>
-                    )}
-
-                    {overAllocated(proj.id) && (
-                      <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", border: "1px solid #C98787", borderRadius: 3, padding: "8px 12px", marginTop: 10 }}>
-                        Trade lines add up to more than the total. Raise the total or lower a trade line.
-                      </div>
-                    )}
-
-                    {editable && (
-                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-                        {dirty && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => clearDrafts(proj.id)}>Discard</button>}
-                        <button className="cb-btn" style={{ fontSize: 13, padding: "9px 16px" }}
-                          disabled={!dirty || saving || overAllocated(proj.id)}
-                          onClick={() => access === "request" ? submitProjectRequest(proj.id) : saveProject(proj.id)}>
-                          {saving ? "Saving…" : access === "request" ? "Submit for approval" : "Save"}
-                        </button>
-                      </div>
-                    )}
-
-                    <div style={{ marginTop: 18, borderTop: "1px solid #EDE9DC", paddingTop: 14 }}>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>HEADCOUNT OVER TIME</div>
-                      <ProjectTrendChart actuals={projActuals} forecast={forecast} periods={periods} />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {doneProjects.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <button onClick={() => setShowDone(!showDone)} style={{
+                background: "none", border: "none", cursor: "pointer", padding: 0,
+                fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 16,
+                textTransform: "uppercase", color: "#8A8270", marginBottom: 10,
+              }}>
+                {showDone ? "▲" : "▼"} Completed ({doneProjects.length})
+              </button>
+              {showDone && doneProjects.map(renderProject)}
+            </div>
+          )}
 
           {showProjectModal && (
             <ProjectRequestModal trades={trades} periods={periods} saving={saving}
               onCancel={() => setShowProjectModal(false)} onSubmit={submitNewProject} />
           )}
           {tradeModal}
+
+          {confirmDone && (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setConfirmDone(null)}>
+              <div className="modal-box" style={{ maxWidth: 400 }}>
+                <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>Mark {confirmDone.name} complete?</div>
+                <div style={{ fontSize: 13, color: "#6B6354", marginBottom: 20, lineHeight: 1.5 }}>
+                  Its numbers and comments are kept for history, but it drops out of the
+                  forecast, the rollup and the transfer matching. You can reopen it later.
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button className="cb-btn-ghost" onClick={() => setConfirmDone(null)}>Cancel</button>
+                  <button className="cb-btn" onClick={() => setProjectStatus(confirmDone, "completed")}>Mark complete</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -1743,10 +1766,9 @@
       const notify = (message, type = "ok") => setToast({ message, type });
 
       const load = useCallback(async () => {
-        // Visitors read roster_public, a view exposing name, title, current
-        // project and vacation only. The roster table itself is closed to them.
-        const source = isVisitor ? "roster_public" : "roster";
-        const { data } = await sb.from(source).select("*").order("name");
+        // Visitors read roster_public — every member column except next_project.
+        // The roster table itself is closed to them at the policy level.
+        const { data } = await sb.from(isVisitor ? "roster_public" : "roster").select("*").order("name");
         setRoster(data || []);
         if (!fullName) {
           const { data: ur } = await sb.from("user_roles").select("full_name").eq("user_id", user.id).single();
@@ -1792,16 +1814,16 @@
       );
 
       const filtered = useMemo(() => withStatus
-        .filter(p => (isVisitor || filter === "all") ? true : p.status === filter)
+        .filter(p => filter === "all" ? true : p.status === filter)
         .filter(p => positionFilter === "all" ? true : (p.position || "") === positionFilter)
-        .filter(p => (isVisitor || tradeFilter === "all") ? true : (p.trade || "") === tradeFilter)
+        .filter(p => tradeFilter === "all" ? true : (p.trade || "") === tradeFilter)
         .filter(p => {
           const q = query.trim().toLowerCase();
           if (!q) return true;
           return p.name.toLowerCase().includes(q) || (p.current_project || "").toLowerCase().includes(q) ||
             (p.next_project || "").toLowerCase().includes(q) || (p.position || "").toLowerCase().includes(q) ||
             (p.trade || "").toLowerCase().includes(q);
-        }), [withStatus, filter, positionFilter, tradeFilter, query, isVisitor]);
+        }), [withStatus, filter, positionFilter, tradeFilter, query]);
 
       async function editorSave(form) {
         setSaving(true);
@@ -1823,8 +1845,6 @@
 
       async function viewerRequest(form, action) {
         setSaving(true);
-        // requester_id and status are pinned by the database insert policy —
-        // they must match the signed-in user and 'pending' respectively.
         const { error } = await sb.from("requests").insert({
           kind: "roster", requester_id: user.id, requester_email: user.email,
           requester_full_name: fullName || null,
@@ -1870,28 +1890,25 @@
           req.action === "edit" ? `edit ${p.name}` : `remove ${p.name}`;
         await sendEmail(userRole.email,
           approved ? "Change Request Approved — Crew Board" : "Change Request Rejected — Crew Board",
-          approved
-            ? `<p>Hi ${userRole.full_name || "there"},</p><p>Your request to <strong>${actionLabel}</strong> has been <strong>approved</strong>.</p>`
-            : `<p>Hi ${userRole.full_name || "there"},</p><p>Your request to <strong>${actionLabel}</strong> has been <strong>rejected</strong>.</p>`
-        );
+          `<p>Hi ${userRole.full_name || "there"},</p><p>Your request to <strong>${actionLabel}</strong> has been <strong>${approved ? "approved" : "rejected"}</strong>.</p>`);
       }
 
-      // Writes an approved grid to the live record. Database triggers handle
-      // both history logs from here, exactly as for a direct save.
+      // Writes approved trade rows. Total rows are skipped on purpose — the
+      // database trigger derives them, so writing one here would be overwritten
+      // anyway and could disagree in the meantime.
       async function writeManpowerRows(projectId, payload) {
         const { data: existing } = await sb.from("manpower").select("*").eq("project_id", projectId);
         const cur = existing || [];
         const updates = [], inserts = [];
-        (payload.rows || []).forEach(row => {
+        (payload.rows || []).filter(r => r.trade_id != null).forEach(row => {
           (payload.periods || []).forEach(p => {
             const headcount = numOf(row.values ? row.values[p.key] : 0);
-            const tradeId = row.trade_id == null ? null : row.trade_id;
             const periodDate = p.date == null ? null : p.date;
             const found = cur.find(x =>
-              (x.trade_id == null ? null : x.trade_id) === tradeId &&
-              (x.period_date == null ? null : x.period_date) === periodDate);
-            if (found) updates.push({ id: found.id, project_id: projectId, trade_id: tradeId, period_date: periodDate, headcount });
-            else inserts.push({ project_id: projectId, trade_id: tradeId, period_date: periodDate, headcount });
+              x.trade_id === row.trade_id &&
+              (x.period_date == null ? null : String(x.period_date).slice(0, 10)) === periodDate);
+            if (found) updates.push({ id: found.id, project_id: projectId, trade_id: row.trade_id, period_date: periodDate, headcount });
+            else inserts.push({ project_id: projectId, trade_id: row.trade_id, period_date: periodDate, headcount });
           });
         });
         if (updates.length) {
@@ -1915,6 +1932,7 @@
           if (!payload.name || !payload.name.trim()) { notify("Project name cannot be empty", "error"); return; }
           const { data: created, error: projErr } = await sb.from("projects").insert({
             name: payload.name.trim(), status: "approved",
+            start_date: payload.start_date || null, end_date: payload.end_date || null,
             requested_by: req.requester_id, approved_at: new Date().toISOString(),
           }).select().single();
           if (projErr) {
@@ -1923,9 +1941,7 @@
               : "Approve failed: " + projErr.message, "error");
             return;
           }
-          if (created && Array.isArray(payload.rows)) {
-            error = await writeManpowerRows(created.id, payload);
-          }
+          if (created && Array.isArray(payload.rows)) error = await writeManpowerRows(created.id, payload);
         } else if (kind === "trade") {
           if (!payload.name || !payload.name.trim()) { notify("Trade name cannot be empty", "error"); return; }
           ({ error } = await sb.from("trades").insert({
@@ -1973,7 +1989,7 @@
       const roleColor = isOwner ? "#A4621A" : isAdmin ? "#3E6F5C" : isVisitor ? "#8A8270" : "#1F4E78";
 
       return (
-        <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#F7F4EC", backgroundImage: "linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px)", backgroundSize: "28px 28px", color: "#1B2A33", minHeight: "100vh", padding: "24px 16px 80px" }}>
+        <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#F7F4EC", backgroundImage: "linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px)", backgroundSize: "28px 28px", color: "#1B2A33", minHeight: "100vh", padding: "24px 16px 60px" }}>
           <div style={{ maxWidth: 1080, margin: "0 auto" }}>
 
             <div className="board-header">
@@ -1994,13 +2010,11 @@
               </div>
             </div>
 
-            {/* Tabs */}
             <div className="tab-strip">
               <button className={"tab-btn" + (tab === "roster" ? " active" : "")} onClick={() => setTab("roster")}>Roster</button>
               <button className={"tab-btn" + (tab === "manpower" ? " active" : "")} onClick={() => setTab("manpower")}>Manpower</button>
             </div>
 
-            {/* Access Requests — admins and owner */}
             {isAdmin && visiblePendingUsers.length > 0 && (
               <div style={{ marginBottom: 24 }}>
                 <div className="section-title">
@@ -2013,11 +2027,10 @@
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 14 }}>{u.full_name || u.email}</div>
                         <div style={{ fontSize: 12, color: "#8A8270", marginTop: 2 }}>{u.email}</div>
-                        <div style={{ fontSize: 11, color: "#8A8270", marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>Requesting access</div>
                       </div>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button className="cb-btn-approve" onClick={() => approveUser(u, "member")}>Approve as Member</button>
-                        {isAdmin && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "8px 14px" }} onClick={() => approveUser(u, "visitor")}>Approve as Visitor</button>}
+                        <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "8px 14px" }} onClick={() => approveUser(u, "visitor")}>Approve as Visitor</button>
                         {isOwner && <button className="cb-btn" style={{ background: "#1F4E78", borderColor: "#1F4E78", fontSize: 13, padding: "8px 14px" }} onClick={() => approveUser(u, "admin")}>Approve as Admin</button>}
                         <button className="cb-btn-danger" style={{ padding: "8px 14px", fontSize: 13 }} onClick={() => rejectUser(u)}>Reject</button>
                       </div>
@@ -2027,10 +2040,8 @@
               </div>
             )}
 
-            {/* Change Requests */}
             {isAdmin && <RequestsPanel requests={requests} roster={roster} onApprove={approveRequest} onReject={rejectRequest} />}
 
-            {/* Manage Users — owner only */}
             {isOwner && showUsers && (
               <div style={{ marginBottom: 24 }}>
                 <div className="section-title">All Users</div>
@@ -2069,29 +2080,21 @@
               </div>
             )}
 
-            {/* ── ROSTER TAB ─────────────────────────────────────────────── */}
+            {/* ── ROSTER ─────────────────────────────────────────────────── */}
             {tab === "roster" && (
               <React.Fragment>
-                {isVisitor && (
-                  <div className="note-bar">
-                    Visitor access — name, title, current project and vacation dates only.
-                  </div>
-                )}
-
-                {!isVisitor && (
-                  <div className="stat-grid">
-                    {[{ key: "active", label: "On project" }, { key: "transitioning", label: "Wrapping up" }, { key: "available", label: "Available" }, { key: "vacation", label: "On vacation" }].map(s => {
-                      const meta = STATUS_META[s.key];
-                      const isActive = filter === s.key;
-                      return (
-                        <button key={s.key} onClick={() => setFilter(isActive ? "all" : s.key)} style={{ textAlign: "left", cursor: "pointer", background: isActive ? meta.bg : "#FFFEFA", border: `1px solid ${isActive ? meta.border : "#D8D2BF"}`, borderLeft: `4px solid ${meta.border}`, borderRadius: 3, padding: "12px 14px" }}>
-                          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 600, color: meta.color }}>{String(counts[s.key]).padStart(2, "0")}</div>
-                          <div style={{ fontSize: 11, color: "#5A5444", marginTop: 2 }}>{s.label}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                <div className="stat-grid">
+                  {[{ key: "active", label: "On project" }, { key: "transitioning", label: "Wrapping up" }, { key: "available", label: "Available" }, { key: "vacation", label: "On vacation" }].map(s => {
+                    const meta = STATUS_META[s.key];
+                    const isActive = filter === s.key;
+                    return (
+                      <button key={s.key} onClick={() => setFilter(isActive ? "all" : s.key)} style={{ textAlign: "left", cursor: "pointer", background: isActive ? meta.bg : "#FFFEFA", border: `1px solid ${isActive ? meta.border : "#D8D2BF"}`, borderLeft: `4px solid ${meta.border}`, borderRadius: 3, padding: "12px 14px" }}>
+                        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 600, color: meta.color }}>{String(counts[s.key]).padStart(2, "0")}</div>
+                        <div style={{ fontSize: 11, color: "#5A5444", marginTop: 2 }}>{s.label}</div>
+                      </button>
+                    );
+                  })}
+                </div>
 
                 {positions.length > 0 && (
                   <div style={{ marginBottom: 14 }}>
@@ -2107,7 +2110,7 @@
                   </div>
                 )}
 
-                {!isVisitor && rosterTrades.length > 0 && (
+                {rosterTrades.length > 0 && (
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 7 }}>FILTER BY TRADE</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -2122,7 +2125,7 @@
                 )}
 
                 <div className="search-bar">
-                  <input className="cb-input" placeholder={isVisitor ? "Search name, project or title" : "Search name, project, position or trade"} value={query} onChange={e => setQuery(e.target.value)} />
+                  <input className="cb-input" placeholder="Search name, project, position or trade" value={query} onChange={e => setQuery(e.target.value)} />
                   {(filter !== "all" || positionFilter !== "all" || tradeFilter !== "all") && (
                     <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setFilter("all"); setPositionFilter("all"); setTradeFilter("all"); }}>Clear ×</button>
                   )}
@@ -2136,28 +2139,10 @@
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {filtered.map(p => {
-                      if (isVisitor) {
-                        return (
-                          <div key={p.id} className="roster-card plain" style={{ borderLeft: "4px solid #C9C2AC" }}>
-                            <div>
-                              <div style={{ fontWeight: 600, fontSize: 15 }}>{p.name}</div>
-                              {p.position && <div style={{ fontSize: 12, color: "#1F4E78", marginTop: 2, fontWeight: 500 }}>{p.position}</div>}
-                            </div>
-                            <div style={{ fontSize: 13 }}>
-                              <div><span style={{ color: "#8A8270" }}>Current: </span>{p.current_project || "—"}</div>
-                              {p.vacation_start && p.vacation_end && (
-                                <div style={{ marginTop: 3, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#7A3B3B" }}>
-                                  Vacation {fmt(p.vacation_start)} – {fmt(p.vacation_end)}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      }
                       const meta = STATUS_META[p.status];
                       const du = daysUntil(p.project_end);
                       return (
-                        <div key={p.id} className="roster-card" style={{ borderLeft: `4px solid ${meta.border}` }}>
+                        <div key={p.id} className={"roster-card" + (isVisitor ? " plain" : "")} style={{ borderLeft: `4px solid ${meta.border}` }}>
                           <div>
                             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                               <span style={{ fontWeight: 600, fontSize: 15 }}>{p.name}</span>
@@ -2172,13 +2157,15 @@
                               <span style={{ color: "#8A8270" }}>Current: </span>{p.current_project || "—"}
                               {p.project_end && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8A8270" }}>{" "}→ {fmt(p.project_end)}{du !== null ? ` (${du >= 0 ? du + "d" : "ended"})` : ""}</span>}
                             </div>
-                            <div style={{ marginTop: 3 }}><span style={{ color: "#8A8270" }}>Next: </span>{p.next_project || "—"}</div>
+                            {!isVisitor && <div style={{ marginTop: 3 }}><span style={{ color: "#8A8270" }}>Next: </span>{p.next_project || "—"}</div>}
                             {p.vacation_start && p.vacation_end && <div style={{ marginTop: 3, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#7A3B3B" }}>Vacation {fmt(p.vacation_start)} – {fmt(p.vacation_end)}</div>}
                           </div>
-                          <div className="card-actions">
-                            <button className="cb-btn-ghost" style={{ padding: "9px 12px", fontSize: 13 }} onClick={() => setEditing(p)}>{isEditor ? "Edit" : "Request edit"}</button>
-                            {isEditor && <button className="cb-btn-danger" style={{ padding: "9px 12px", fontSize: 13 }} onClick={() => setConfirmDelete(p)}>Remove</button>}
-                          </div>
+                          {!isVisitor && (
+                            <div className="card-actions">
+                              <button className="cb-btn-ghost" style={{ padding: "9px 12px", fontSize: 13 }} onClick={() => setEditing(p)}>{isEditor ? "Edit" : "Request edit"}</button>
+                              {isEditor && <button className="cb-btn-danger" style={{ padding: "9px 12px", fontSize: 13 }} onClick={() => setConfirmDelete(p)}>Remove</button>}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -2187,16 +2174,12 @@
               </React.Fragment>
             )}
 
-            {/* ── MANPOWER TAB ───────────────────────────────────────────── */}
+            {/* ── MANPOWER ───────────────────────────────────────────────── */}
             {tab === "manpower" && (
               isVisitor
                 ? <VisitorManpower />
-                : <ManpowerView user={user} role={role} notify={notify} onRequestSubmitted={load} />
+                : <ManpowerView user={user} role={role} fullName={fullName} notify={notify} onRequestSubmitted={load} />
             )}
-
-            <div style={{ marginTop: 32, fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace" }}>
-              Live — changes appear for everyone instantly. Status updates from dates automatically.
-            </div>
           </div>
 
           {editing !== null && (
@@ -2256,7 +2239,6 @@
       );
     }
 
-    // ── Rejected Screen ───────────────────────────────────────────────────────
     function RejectedScreen({ email }) {
       async function signOut() { await sb.auth.signOut(); window.location.reload(); }
       return (
@@ -2272,7 +2254,6 @@
       );
     }
 
-    // ── Pending Screen ────────────────────────────────────────────────────────
     function PendingScreen({ email }) {
       async function signOut() { await sb.auth.signOut(); window.location.reload(); }
       return (
