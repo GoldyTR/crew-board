@@ -14,13 +14,12 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { margin: 0; background: #F7F4EC; background-image: linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px); background-size: 28px 28px; }
-    .cb-input, .cb-textarea, .cb-select {
+    .cb-input, .cb-textarea {
       font-family: 'Inter', sans-serif; font-size: 14px;
       border: 1px solid #C9C2AC; background: #FFFEFA; color: #1B2A33;
       border-radius: 3px; padding: 10px 12px; width: 100%; -webkit-appearance: none;
     }
-    .cb-select { -webkit-appearance: menulist; padding: 8px 10px; }
-    .cb-input:focus, .cb-textarea:focus, .cb-select:focus { outline: 2px solid #1F4E78; outline-offset: 1px; }
+    .cb-input:focus, .cb-textarea:focus { outline: 2px solid #1F4E78; outline-offset: 1px; }
     .cb-btn {
       font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px;
       border-radius: 3px; border: 1px solid #1B2A33; background: #1B2A33;
@@ -71,6 +70,7 @@
     }
     @media (min-width: 700px) {
       .roster-card { display: grid; grid-template-columns: 1.3fr 1.4fr auto auto; gap: 16px; align-items: center; }
+      .roster-card.plain { grid-template-columns: 1.3fr 1.4fr; }
     }
     .card-actions { display: flex; gap: 8px; }
     .card-actions button { flex: 1; }
@@ -106,7 +106,6 @@
       color: #A4621A; background: #F6E9D6; border: 1px solid #C9821F;
       border-radius: 3px; padding: 2px 7px;
     }
-    /* Tabs */
     .tab-strip { display: flex; gap: 2px; border-bottom: 2px solid #1B2A33; margin-bottom: 20px; }
     .tab-btn {
       font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 14px;
@@ -117,7 +116,6 @@
     }
     .tab-btn:hover { color: #1B2A33; background: #EDE9DC; }
     .tab-btn.active { background: #1B2A33; color: #F7F4EC; border-color: #1B2A33; }
-    /* Manpower */
     .mp-card {
       background: #FFFEFA; border: 1px solid #D8D2BF; border-left: 4px solid #1F4E78;
       border-radius: 3px; margin-bottom: 10px;
@@ -127,6 +125,8 @@
       gap: 12px; cursor: pointer; flex-wrap: wrap;
     }
     .mp-card-head:hover { background: #FBF9F2; }
+    .mp-card-head.static { cursor: default; }
+    .mp-card-head.static:hover { background: transparent; }
     .mp-card-body { border-top: 1px solid #E3DFD1; padding: 14px 16px; }
     .mp-grid { width: 100%; border-collapse: collapse; font-size: 13px; }
     .mp-grid th {
@@ -161,6 +161,7 @@
       border-radius: 3px; padding: 12px 16px; margin-bottom: 8px; font-size: 13px;
     }
     .move-card.hire { border-left-color: #C9821F; }
+    .move-card.avail { border-left-color: #1F4E78; }
     .trade-toggle {
       font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
       padding: 5px 12px; border-radius: 99px; cursor: pointer;
@@ -176,11 +177,11 @@
     const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9tbGd4bGVjaWpkdmN6Ym50ZWFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NDk1NjMsImV4cCI6MjA5ODQyNTU2M30.SODHGjbOaixxfdLIdDMMqSxkdI3GgjK8Tlrz9d8zU6I";
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-    // Roles that count as board managers. Kept in one place so the UI and the
-    // database RLS policies stay in agreement.
+    // Role sets, kept in one place so the UI and the RLS policies agree.
     const MANAGER_ROLES = ["admin", "owner", "hidden_admin", "hidden_owner"];
-    const isManagerRole = (r) => MANAGER_ROLES.includes(r);
-    const isOwnerRole = (r) => r === "owner" || r === "hidden_owner";
+    const isManagerRole = (r) => MANAGER_ROLES.indexOf(r) >= 0;
+    const isOwnerRole   = (r) => r === "owner" || r === "hidden_owner";
+    const isVisitorRole = (r) => r === "visitor" || r === "hidden_visitor";
 
     const OWNER_EMAIL = "goldytraju@gmail.com";
 
@@ -193,6 +194,8 @@
     }
 
     const clone = (o) => JSON.parse(JSON.stringify(o));
+    const numOf = (v) => { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; };
+    const digitsOnly = (v) => v === "" || /^\d{0,5}$/.test(v);
 
     // ── Date helpers ──────────────────────────────────────────────────────────
 
@@ -200,13 +203,12 @@
       const p = (n) => String(n).padStart(2, "0");
       return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
     }
-
     function endOfMonth(year, monthIndex) { return new Date(year, monthIndex + 1, 0); }
     function monthLabel(d) { return d.toLocaleDateString("en-CA", { month: "long" }); }
 
-    // Two forecast buckets: end of this month and end of next.
-    // When fewer than 7 days remain in the current month the window rolls
-    // forward, so nobody is ever asked to forecast two days out.
+    // Two forecast buckets: end of this month and end of next. When fewer than
+    // 7 days remain in the current month the window rolls forward, so nobody is
+    // ever asked to forecast two days out.
     const ROLLOVER_DAYS = 7;
 
     function computePeriods(today = new Date()) {
@@ -228,7 +230,6 @@
       const today = new Date(); today.setHours(0,0,0,0);
       return Math.round((new Date(dateStr + "T00:00:00") - today) / 86400000);
     }
-
     function daysSince(tsStr) {
       if (!tsStr) return null;
       return Math.floor((new Date() - new Date(tsStr)) / 86400000);
@@ -256,9 +257,6 @@
       if (!d) return "—";
       return new Date(d + "T00:00:00").toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
     }
-
-    const numOf = (v) => { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; };
-    const digitsOnly = (v) => v === "" || /^\d{0,5}$/.test(v);
 
     // ── Shared inputs ─────────────────────────────────────────────────────────
 
@@ -307,8 +305,7 @@
     function ManpowerGrid({ rows, periods, onChange, disabled }) {
       const unspecified = (pKey) => {
         const total = numOf((rows.find(r => r.trade_id === null) || { values: {} }).values[pKey]);
-        const detail = rows.filter(r => r.trade_id !== null)
-          .reduce((s, r) => s + numOf(r.values[pKey]), 0);
+        const detail = rows.filter(r => r.trade_id !== null).reduce((s, r) => s + numOf(r.values[pKey]), 0);
         return total - detail;
       };
       return (
@@ -532,7 +529,6 @@
         try { return JSON.parse(r.payload); } catch (e) { return {}; }
       }, [r.payload]);
       const [draft, setDraft] = useState(() => clone(original));
-
       useEffect(() => { setDraft(clone(original)); }, [original]);
 
       const kind = r.kind || "roster";
@@ -691,21 +687,15 @@
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  MANPOWER
+    //  CHARTS
     // ══════════════════════════════════════════════════════════════════════════
 
-    function AggregateChart({ rollup, periods, trades }) {
+    function GroupedBars({ series, periods }) {
       const W = 640, H = 190, padL = 46, padB = 34, padT = 14, padR = 10;
-      const rows = trades.map(t => ({
-        name: t.name,
-        values: periods.map(p => (rollup.byTrade[t.id] || {})[p.key] || 0),
-      }));
-      rows.push({ name: "Unspecified", values: periods.map(p => rollup.unspecified[p.key] || 0) });
-
-      const max = Math.max(1, ...rows.reduce((a, r) => a.concat(r.values), []));
+      const max = Math.max(1, ...series.reduce((a, r) => a.concat(r.values), []));
       const plotW = W - padL - padR, plotH = H - padB - padT;
-      const groupW = plotW / periods.length;
-      const barW = Math.min(46, (groupW - 16) / Math.max(1, rows.length));
+      const groupW = plotW / Math.max(1, periods.length);
+      const barW = Math.min(46, (groupW - 16) / Math.max(1, series.length));
       const COLORS = ["#1F4E78", "#3E6F5C", "#C9821F", "#7A3B3B", "#5A5444", "#2E6394"];
 
       return (
@@ -716,9 +706,7 @@
               return (
                 <g key={f}>
                   <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#E3DFD1" strokeWidth="1" />
-                  <text x={padL - 7} y={y + 4} textAnchor="end" fontSize="10" fill="#8A8270" fontFamily="'JetBrains Mono', monospace">
-                    {Math.round(max * f)}
-                  </text>
+                  <text x={padL - 7} y={y + 4} textAnchor="end" fontSize="10" fill="#8A8270" fontFamily="'JetBrains Mono', monospace">{Math.round(max * f)}</text>
                 </g>
               );
             })}
@@ -726,14 +714,14 @@
               const gx = padL + pi * groupW;
               return (
                 <g key={p.key}>
-                  {rows.map((r, ri) => {
+                  {series.map((r, ri) => {
                     const v = r.values[pi];
                     const h = (v / max) * plotH;
-                    const x = gx + (groupW - barW * rows.length) / 2 + ri * barW;
+                    const x = gx + (groupW - barW * series.length) / 2 + ri * barW;
                     return (
                       <g key={r.name}>
                         <rect x={x} y={padT + plotH - h} width={Math.max(2, barW - 3)} height={h}
-                          fill={COLORS[ri % COLORS.length]} opacity={r.name === "Unspecified" ? 0.4 : 1} />
+                          fill={COLORS[ri % COLORS.length]} opacity={r.faded ? 0.4 : 1} />
                         {v > 0 && (
                           <text x={x + (barW - 3) / 2} y={padT + plotH - h - 4} textAnchor="middle"
                             fontSize="10" fill="#5A5444" fontFamily="'JetBrains Mono', monospace">{v}</text>
@@ -747,14 +735,16 @@
               );
             })}
           </svg>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 6 }}>
-            {rows.map((r, i) => (
-              <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#5A5444" }}>
-                <span style={{ width: 10, height: 10, background: COLORS[i % COLORS.length], opacity: r.name === "Unspecified" ? 0.4 : 1, borderRadius: 2 }} />
-                {r.name}
-              </div>
-            ))}
-          </div>
+          {series.length > 1 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 6 }}>
+              {series.map((r, i) => (
+                <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#5A5444" }}>
+                  <span style={{ width: 10, height: 10, background: COLORS[i % COLORS.length], opacity: r.faded ? 0.4 : 1, borderRadius: 2 }} />
+                  {r.name}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       );
     }
@@ -810,13 +800,104 @@
       );
     }
 
-    // New-project request: name plus the trades that apply and their starting numbers.
+    // ══════════════════════════════════════════════════════════════════════════
+    //  MANPOWER — VISITOR VIEW
+    // ══════════════════════════════════════════════════════════════════════════
+
+    // Visitors read from manpower_totals, a view exposing project totals only.
+    // The underlying manpower table is closed to them at the policy level, so
+    // trade detail and history are unreachable rather than merely hidden.
+    function VisitorManpower() {
+      const [projects, setProjects] = useState([]);
+      const [totals, setTotals] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const periods = useMemo(() => computePeriods(), []);
+
+      useEffect(() => {
+        let cancelled = false;
+        (async () => {
+          const [pRes, tRes] = await Promise.all([
+            sb.from("projects").select("id, name").eq("status", "approved").order("name"),
+            sb.from("manpower_totals").select("*"),
+          ]);
+          if (cancelled) return;
+          setProjects(pRes.data || []);
+          setTotals(tRes.data || []);
+          setLoading(false);
+        })();
+        return () => { cancelled = true; };
+      }, []);
+
+      const at = (projectId, periodKey) => {
+        const row = totals.find(t => t.project_id === projectId && (t.period_date || "now") === periodKey);
+        return row ? row.headcount : 0;
+      };
+
+      const grandTotals = periods.map(p =>
+        projects.reduce((s, proj) => s + at(proj.id, p.key), 0));
+
+      if (loading) return (
+        <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
+          Loading manpower…
+        </div>
+      );
+
+      if (projects.length === 0) return (
+        <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 40, textAlign: "center", color: "#8A8270" }}>
+          No projects on the board yet.
+        </div>
+      );
+
+      return (
+        <div>
+          <div className="note-bar">
+            Visitor access — total manpower only.
+          </div>
+
+          <div style={{ marginBottom: 24 }}>
+            <div className="section-title">Total Manpower</div>
+            <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "16px 16px 10px" }}>
+              <GroupedBars series={[{ name: "All projects", values: grandTotals }]} periods={periods} />
+            </div>
+          </div>
+
+          <div className="section-title">By Project</div>
+          <div style={{ overflowX: "auto", border: "1px solid #D8D2BF", borderRadius: 3 }}>
+            <table className="roll-table">
+              <thead>
+                <tr>
+                  <th>Project</th>
+                  {periods.map(p => <th key={p.key}>{p.label.toUpperCase()}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map(proj => (
+                  <tr key={proj.id}>
+                    <td>{proj.name}</td>
+                    {periods.map(p => <td key={p.key}>{at(proj.id, p.key)}</td>)}
+                  </tr>
+                ))}
+                <tr>
+                  <td style={{ fontWeight: 600 }}>All projects</td>
+                  {grandTotals.map((v, i) => <td key={i} style={{ fontWeight: 600 }}>{v}</td>)}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  MANPOWER — FULL VIEW
+    // ══════════════════════════════════════════════════════════════════════════
+
     function ProjectRequestModal({ trades, periods, saving, onCancel, onSubmit }) {
       const [name, setName] = useState("");
       const [picked, setPicked] = useState([]);
-      const [values, setValues] = useState({}); // "total"|tradeId -> { periodKey: value }
+      const [values, setValues] = useState({});
 
-      const rowsFor = () => {
+      const gridRows = (() => {
         const mk = (label, tradeId) => ({
           label, trade_id: tradeId,
           values: periods.reduce((o, p) => {
@@ -828,9 +909,8 @@
           const t = trades.find(x => x.id === id);
           return mk(t ? t.name : "Trade " + id, id);
         }));
-      };
+      })();
 
-      const gridRows = rowsFor();
       const over = gridOverAllocated(gridRows, periods);
 
       function setVal(rowIndex, periodKey, v) {
@@ -878,9 +958,7 @@
             </div>
 
             <div style={{ marginTop: 18 }}>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>
-                MANPOWER
-              </div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>MANPOWER</div>
               <ManpowerGrid rows={gridRows} periods={periods} onChange={setVal} />
             </div>
 
@@ -892,8 +970,7 @@
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
               <button className="cb-btn-ghost" onClick={onCancel}>Cancel</button>
-              <button className="cb-btn" disabled={!name.trim() || saving || over}
-                onClick={() => onSubmit(name.trim(), gridRows)}>
+              <button className="cb-btn" disabled={!name.trim() || saving || over} onClick={() => onSubmit(name.trim(), gridRows)}>
                 {saving ? "Submitting…" : "Submit request"}
               </button>
             </div>
@@ -916,7 +993,7 @@
       const [loading, setLoading] = useState(true);
       const [expanded, setExpanded] = useState(null);
       const [drafts, setDrafts] = useState({});
-      const [addedTrades, setAddedTrades] = useState({}); // projectId -> [tradeId]
+      const [addedTrades, setAddedTrades] = useState({});
       const [saving, setSaving] = useState(false);
       const [showProjectModal, setShowProjectModal] = useState(false);
       const [askTrade, setAskTrade] = useState(false);
@@ -942,7 +1019,7 @@
         setApprovalRequired(sRes.data?.value === "true");
         if (isAdmin) {
           const { data: us } = await sb.from("user_roles").select("*").eq("status", "approved").order("full_name");
-          setMembers((us || []).filter(u => !isManagerRole(u.role)));
+          setMembers((us || []).filter(u => !isManagerRole(u.role) && !isVisitorRole(u.role)));
         }
         setLoading(false);
       }, [isAdmin]);
@@ -1035,10 +1112,7 @@
       }
 
       function addTradeToProject(projectId, tradeId) {
-        setAddedTrades(a => Object.assign({}, a, {
-          [projectId]: (a[projectId] || []).concat([tradeId]),
-        }));
-        // Seed zeros so the row saves even if left untouched.
+        setAddedTrades(a => Object.assign({}, a, { [projectId]: (a[projectId] || []).concat([tradeId]) }));
         periods.forEach(p => {
           const k = draftKey(projectId, tradeId, p.key);
           setDrafts(d => (k in d) ? d : Object.assign({}, d, { [k]: "0" }));
@@ -1214,15 +1288,19 @@
         return { byTrade, unspecified, byProject };
       }, [projects, activeTrades, periods, cell]);
 
+      // Each period is compared against the PREVIOUS period, not against today.
+      // Comparing everything to today double-counts: a hire made in month one
+      // would still show as an outstanding need in month two.
       const moves = useMemo(() => {
         const out = [];
-        periods.slice(1).forEach(p => {
+        for (let i = 1; i < periods.length; i++) {
+          const prev = periods[i - 1], p = periods[i];
           activeTrades.forEach(t => {
             const releasing = [], needing = [];
             projects.forEach(proj => {
               const tr = rollup.byProject[proj.id] ? rollup.byProject[proj.id].trades[t.id] : null;
               if (!tr) return;
-              const delta = (tr[p.key] || 0) - (tr["now"] || 0);
+              const delta = (tr[p.key] || 0) - (tr[prev.key] || 0);
               if (delta < 0) releasing.push({ name: proj.name, count: -delta });
               if (delta > 0) needing.push({ name: proj.name, count: delta });
             });
@@ -1231,6 +1309,7 @@
             const totalRel = releasing.reduce((s, r) => s + r.count, 0);
             const totalNeed = needing.reduce((s, r) => s + r.count, 0);
 
+            // Greedy pairing, biggest release against biggest need.
             const pool = releasing.map(r => Object.assign({}, r)).sort((a, b) => b.count - a.count);
             const want = needing.map(r => Object.assign({}, r)).sort((a, b) => b.count - a.count);
             const transfers = [];
@@ -1244,12 +1323,13 @@
             });
 
             out.push({
-              period: p, trade: t, totalRel, totalNeed, transfers,
+              period: p, from: prev, trade: t, totalRel, totalNeed, transfers,
+              releasing, needing,
               hire: Math.max(0, totalNeed - totalRel),
               surplus: Math.max(0, totalRel - totalNeed),
             });
           });
-        });
+        }
         return out;
       }, [projects, activeTrades, periods, rollup]);
 
@@ -1263,6 +1343,14 @@
         });
         return total === 0 ? null : Math.round((detailed / total) * 100);
       }, [projects, activeTrades, rollup]);
+
+      const chartSeries = useMemo(() => {
+        const s = activeTrades.map(t => ({
+          name: t.name, values: periods.map(p => (rollup.byTrade[t.id] || {})[p.key] || 0),
+        }));
+        s.push({ name: "Unspecified", faded: true, values: periods.map(p => rollup.unspecified[p.key] || 0) });
+        return s;
+      }, [activeTrades, periods, rollup]);
 
       const tradeModal = askTrade && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setAskTrade(false)}>
@@ -1327,10 +1415,7 @@
                     width: 32, height: 18, borderRadius: 99, position: "relative", display: "inline-block",
                     background: approvalRequired ? "#3E6F5C" : "#C9C2AC",
                   }}>
-                    <span style={{
-                      position: "absolute", top: 2, left: approvalRequired ? 16 : 2,
-                      width: 14, height: 14, borderRadius: 99, background: "#fff",
-                    }} />
+                    <span style={{ position: "absolute", top: 2, left: approvalRequired ? 16 : 2, width: 14, height: 14, borderRadius: 99, background: "#fff" }} />
                   </span>
                   Approvals {approvalRequired ? "on" : "off"}
                 </button>
@@ -1378,7 +1463,7 @@
           <div style={{ marginBottom: 24 }}>
             <div className="section-title">Total Manpower</div>
             <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "16px 16px 10px" }}>
-              <AggregateChart rollup={rollup} periods={periods} trades={activeTrades} />
+              <GroupedBars series={chartSeries} periods={periods} />
             </div>
             {coverage !== null && coverage < 100 && (
               <div className="note-bar" style={{ marginTop: 8, marginBottom: 0 }}>
@@ -1398,7 +1483,7 @@
                     <tr>
                       <th>Trade</th>
                       {periods.map(p => <th key={p.key}>{p.label.toUpperCase()}</th>)}
-                      <th>CHANGE</th>
+                      <th>NET</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1435,27 +1520,53 @@
               <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 28, textAlign: "center", color: "#8A8270", fontSize: 13 }}>
                 Nothing moving — every project holds steady across both periods.
               </div>
-            ) : moves.map((m, i) => (
-              <div key={i} className={"move-card" + (m.hire > 0 ? " hire" : "")}>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>{m.trade.name} — {m.period.label}</div>
-                {m.transfers.length > 0 && (
-                  <div style={{ marginBottom: 6 }}>
-                    {m.transfers.map((t, j) => (
-                      <div key={j} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#3E6F5C" }}>
-                        {t.count} from {t.from} → {t.to}
-                      </div>
-                    ))}
+            ) : moves.map((m, i) => {
+              const pureSurplus = m.totalNeed === 0 && m.surplus > 0;
+              return (
+                <div key={i} className={"move-card" + (m.hire > 0 ? " hire" : pureSurplus ? " avail" : "")}>
+                  <div style={{ fontWeight: 600 }}>{m.trade.name} — {m.period.label}</div>
+                  <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "#9A9381", marginBottom: 6 }}>
+                    CHANGE FROM {m.from.label.toUpperCase()}
                   </div>
-                )}
-                <div style={{ fontSize: 12, color: "#5A5444" }}>
-                  {m.totalRel > 0 && <span>{m.totalRel} releasing. </span>}
-                  {m.totalNeed > 0 && <span>{m.totalNeed} needed. </span>}
-                  {m.hire > 0 && <strong style={{ color: "#A4621A" }}>Hire {m.hire}.</strong>}
-                  {m.surplus > 0 && <strong style={{ color: "#1F4E78" }}>{m.surplus} spare after transfers.</strong>}
-                  {m.hire === 0 && m.surplus === 0 && m.transfers.length > 0 && <strong style={{ color: "#3E6F5C" }}>Fully covered by transfers.</strong>}
+
+                  {m.transfers.length > 0 && (
+                    <div style={{ marginBottom: 6 }}>
+                      {m.transfers.map((t, j) => (
+                        <div key={j} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#3E6F5C" }}>
+                          {t.count} from {t.from} → {t.to}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {pureSurplus && (
+                    <div style={{ marginBottom: 6 }}>
+                      {m.releasing.map((r, j) => (
+                        <div key={j} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#1F4E78" }}>
+                          {r.count} coming off {r.name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: 12, color: "#5A5444" }}>
+                    {pureSurplus ? (
+                      <strong style={{ color: "#1F4E78" }}>
+                        {m.surplus} additional {m.trade.name.toLowerCase()} available — no project needs them this period.
+                      </strong>
+                    ) : (
+                      <React.Fragment>
+                        {m.totalNeed > 0 && <span>{m.totalNeed} needed. </span>}
+                        {m.totalRel > 0 && <span>{m.totalRel} releasing. </span>}
+                        {m.hire > 0 && <strong style={{ color: "#A4621A" }}>Hire {m.hire}.</strong>}
+                        {m.surplus > 0 && <strong style={{ color: "#1F4E78" }}> {m.surplus} spare after transfers.</strong>}
+                        {m.hire === 0 && m.surplus === 0 && m.transfers.length > 0 && <strong style={{ color: "#3E6F5C" }}>Fully covered by transfers.</strong>}
+                      </React.Fragment>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Per-project entry */}
@@ -1549,13 +1660,11 @@
                       </table>
                     </div>
 
-                    {/* Add a trade to this project */}
                     {editable && available.length > 0 && (
                       <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270" }}>ADD TRADE</span>
                         {available.map(t => (
-                          <button key={t.id} className="trade-toggle"
-                            onClick={() => addTradeToProject(proj.id, t.id)}
+                          <button key={t.id} className="trade-toggle" onClick={() => addTradeToProject(proj.id, t.id)}
                             style={{ background: "#FFFEFA", color: "#5A5444", border: "1px solid #C9C2AC" }}>
                             + {t.name}
                           </button>
@@ -1612,6 +1721,7 @@
     function CrewBoard({ user, role }) {
       const isOwner = isOwnerRole(role);
       const isAdmin = isManagerRole(role);
+      const isVisitor = isVisitorRole(role);
       const isEditor = isAdmin;
       const [tab, setTab] = useState("roster");
       const [fullName, setFullName] = useState("");
@@ -1633,7 +1743,10 @@
       const notify = (message, type = "ok") => setToast({ message, type });
 
       const load = useCallback(async () => {
-        const { data } = await sb.from("roster").select("*").order("name");
+        // Visitors read roster_public, a view exposing name, title, current
+        // project and vacation only. The roster table itself is closed to them.
+        const source = isVisitor ? "roster_public" : "roster";
+        const { data } = await sb.from(source).select("*").order("name");
         setRoster(data || []);
         if (!fullName) {
           const { data: ur } = await sb.from("user_roles").select("full_name").eq("user_id", user.id).single();
@@ -1650,9 +1763,9 @@
           setAllUsers(all || []);
         }
         setLoading(false);
-      }, [isAdmin, isOwner]);
+      }, [isAdmin, isOwner, isVisitor]);
 
-      useEffect(() => { load(); }, [isAdmin]);
+      useEffect(() => { load(); }, [load]);
 
       useEffect(() => {
         const channel = sb.channel("roster-changes")
@@ -1662,7 +1775,7 @@
           .subscribe();
         const poll = setInterval(() => load(), 15000);
         return () => { sb.removeChannel(channel); clearInterval(poll); };
-      }, [isAdmin]);
+      }, [load]);
 
       const withStatus = useMemo(() => roster.map(p => ({ ...p, status: deriveStatus(p) })), [roster]);
       const counts = useMemo(() => {
@@ -1673,25 +1786,22 @@
       const positions = useMemo(() => Array.from(new Set(withStatus.map(p => p.position).filter(Boolean))).sort(), [withStatus]);
       const rosterTrades = useMemo(() => Array.from(new Set(withStatus.map(p => p.trade).filter(Boolean))).sort(), [withStatus]);
 
-      // Manage Users is the Owner's panel. Admins approve access requests but do
-      // not see or manage the user list.
-      const visibleUsers = useMemo(() => allUsers, [allUsers]);
       const visiblePendingUsers = useMemo(
         () => pendingUsers.filter(u => isOwner || !u.role?.startsWith("hidden_")),
         [pendingUsers, isOwner]
       );
 
       const filtered = useMemo(() => withStatus
-        .filter(p => filter === "all" ? true : p.status === filter)
+        .filter(p => (isVisitor || filter === "all") ? true : p.status === filter)
         .filter(p => positionFilter === "all" ? true : (p.position || "") === positionFilter)
-        .filter(p => tradeFilter === "all" ? true : (p.trade || "") === tradeFilter)
+        .filter(p => (isVisitor || tradeFilter === "all") ? true : (p.trade || "") === tradeFilter)
         .filter(p => {
           const q = query.trim().toLowerCase();
           if (!q) return true;
           return p.name.toLowerCase().includes(q) || (p.current_project || "").toLowerCase().includes(q) ||
             (p.next_project || "").toLowerCase().includes(q) || (p.position || "").toLowerCase().includes(q) ||
             (p.trade || "").toLowerCase().includes(q);
-        }), [withStatus, filter, positionFilter, tradeFilter, query]);
+        }), [withStatus, filter, positionFilter, tradeFilter, query, isVisitor]);
 
       async function editorSave(form) {
         setSaving(true);
@@ -1729,7 +1839,8 @@
       async function approveUser(u, newRole) {
         const { error } = await sb.from("user_roles").update({ status: "approved", role: newRole }).eq("user_id", u.user_id);
         if (error) { notify("Failed to approve user: " + error.message, "error"); return; }
-        notify(`${u.full_name || u.email} approved as ${newRole === "admin" ? "Admin" : "Member"}`); load();
+        const label = newRole === "admin" ? "Admin" : newRole === "visitor" ? "Visitor" : "Member";
+        notify(`${u.full_name || u.email} approved as ${label}`); load();
       }
 
       async function rejectUser(u) {
@@ -1858,6 +1969,9 @@
 
       async function signOut() { await sb.auth.signOut(); window.location.reload(); }
 
+      const roleLabel = isOwner ? "OWNER" : isAdmin ? "ADMIN" : isVisitor ? "VISITOR" : "MEMBER";
+      const roleColor = isOwner ? "#A4621A" : isAdmin ? "#3E6F5C" : isVisitor ? "#8A8270" : "#1F4E78";
+
       return (
         <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#F7F4EC", backgroundImage: "linear-gradient(#E3DFD1 1px, transparent 1px), linear-gradient(90deg, #E3DFD1 1px, transparent 1px)", backgroundSize: "28px 28px", color: "#1B2A33", minHeight: "100vh", padding: "24px 16px 80px" }}>
           <div style={{ maxWidth: 1080, margin: "0 auto" }}>
@@ -1870,11 +1984,11 @@
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "#1B2A33" }}>{fullName || user.email}</div>
-                  <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: isOwner ? "#A4621A" : isAdmin ? "#3E6F5C" : "#1F4E78", fontWeight: 600, marginTop: 2 }}>{isOwner ? "OWNER" : isAdmin ? "ADMIN" : "MEMBER"}</div>
+                  <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: roleColor, fontWeight: 600, marginTop: 2 }}>{roleLabel}</div>
                 </div>
                 <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={signOut}>Sign out</button>
                 {isOwner && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowUsers(!showUsers)}>{showUsers ? "Hide users" : "Manage users"}</button>}
-                {tab === "roster" && (
+                {tab === "roster" && !isVisitor && (
                   <button className="cb-btn" onClick={() => setEditing({})}>{isEditor ? "+ Add" : "+ Request"}</button>
                 )}
               </div>
@@ -1903,6 +2017,7 @@
                       </div>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button className="cb-btn-approve" onClick={() => approveUser(u, "member")}>Approve as Member</button>
+                        {isAdmin && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "8px 14px" }} onClick={() => approveUser(u, "visitor")}>Approve as Visitor</button>}
                         {isOwner && <button className="cb-btn" style={{ background: "#1F4E78", borderColor: "#1F4E78", fontSize: 13, padding: "8px 14px" }} onClick={() => approveUser(u, "admin")}>Approve as Admin</button>}
                         <button className="cb-btn-danger" style={{ padding: "8px 14px", fontSize: 13 }} onClick={() => rejectUser(u)}>Reject</button>
                       </div>
@@ -1919,32 +2034,36 @@
             {isOwner && showUsers && (
               <div style={{ marginBottom: 24 }}>
                 <div className="section-title">All Users</div>
-                {visibleUsers.length === 0 ? (
+                {allUsers.length === 0 ? (
                   <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 28, textAlign: "center", color: "#8A8270", fontSize: 13 }}>No users to manage yet.</div>
                 ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {visibleUsers.map(u => (
-                    <div key={u.user_id} style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "12px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{u.full_name || u.email}</div>
-                        <div style={{ fontSize: 12, color: "#8A8270", marginTop: 2 }}>{u.email}</div>
-                        <div style={{ fontSize: 11, marginTop: 3, fontFamily: "'JetBrains Mono', monospace", color: u.status === "approved" ? "#3E6F5C" : u.status === "rejected" ? "#9A3C3C" : "#A4621A" }}>
-                          {u.role?.toUpperCase()} — {u.status?.toUpperCase()}
+                  {allUsers.map(u => {
+                    const bare = (u.role || "").replace("hidden_", "");
+                    return (
+                      <div key={u.user_id} style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "12px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{u.full_name || u.email}</div>
+                          <div style={{ fontSize: 12, color: "#8A8270", marginTop: 2 }}>{u.email}</div>
+                          <div style={{ fontSize: 11, marginTop: 3, fontFamily: "'JetBrains Mono', monospace", color: u.status === "approved" ? "#3E6F5C" : u.status === "rejected" ? "#9A3C3C" : "#A4621A" }}>
+                            {u.role?.toUpperCase()} — {u.status?.toUpperCase()}
+                          </div>
                         </div>
+                        {u.user_id === user.id && <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>YOU</div>}
+                        {u.user_id !== user.id && !isOwnerRole(u.role) && (
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {u.status !== "approved" && <button className="cb-btn-approve" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "approved", u.role || "member")}>Approve</button>}
+                            {u.status === "approved" && bare !== "admin" && <button className="cb-btn" style={{ fontSize: 12, padding: "7px 12px", background: "#1F4E78", borderColor: "#1F4E78" }} onClick={() => changeUserStatus(u, "approved", "admin")}>Make Admin</button>}
+                            {u.status === "approved" && bare !== "visitor" && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "approved", "visitor")}>Make Visitor</button>}
+                            {u.status === "approved" && bare !== "member" && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "approved", "member")}>Make Member</button>}
+                            {u.status !== "rejected" && <button className="cb-btn-danger" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "rejected", null)}>Revoke access</button>}
+                            <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, u.status, u.role?.startsWith("hidden_") ? bare : "hidden_" + u.role)}>{u.role?.startsWith("hidden_") ? "Unhide" : "Hide"}</button>
+                          </div>
+                        )}
+                        {u.user_id !== user.id && isOwnerRole(u.role) && <div style={{ fontSize: 11, color: "#A4621A", fontFamily: "'JetBrains Mono', monospace" }}>OWNER — PROTECTED</div>}
                       </div>
-                      {u.user_id === user.id && <div style={{ fontSize: 11, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace" }}>YOU</div>}
-                      {u.user_id !== user.id && !isOwnerRole(u.role) && (
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {u.status !== "approved" && <button className="cb-btn-approve" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "approved", u.role || "member")}>Approve</button>}
-                          {u.status === "approved" && u.role !== "admin" && <button className="cb-btn" style={{ fontSize: 12, padding: "7px 12px", background: "#1F4E78", borderColor: "#1F4E78" }} onClick={() => changeUserStatus(u, "approved", "admin")}>Make Admin</button>}
-                          {u.status === "approved" && u.role === "admin" && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "approved", "member")}>Demote to Member</button>}
-                          {u.status !== "rejected" && <button className="cb-btn-danger" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, "rejected", null)}>Revoke access</button>}
-                          <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }} onClick={() => changeUserStatus(u, u.status, u.role?.startsWith("hidden_") ? u.role.replace("hidden_", "") : "hidden_" + u.role)}>{u.role?.startsWith("hidden_") ? "Unhide" : "Hide"}</button>
-                        </div>
-                      )}
-                      {u.user_id !== user.id && isOwnerRole(u.role) && <div style={{ fontSize: 11, color: "#A4621A", fontFamily: "'JetBrains Mono', monospace" }}>OWNER — PROTECTED</div>}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 )}
               </div>
@@ -1953,18 +2072,26 @@
             {/* ── ROSTER TAB ─────────────────────────────────────────────── */}
             {tab === "roster" && (
               <React.Fragment>
-                <div className="stat-grid">
-                  {[{ key: "active", label: "On project" }, { key: "transitioning", label: "Wrapping up" }, { key: "available", label: "Available" }, { key: "vacation", label: "On vacation" }].map(s => {
-                    const meta = STATUS_META[s.key];
-                    const isActive = filter === s.key;
-                    return (
-                      <button key={s.key} onClick={() => setFilter(isActive ? "all" : s.key)} style={{ textAlign: "left", cursor: "pointer", background: isActive ? meta.bg : "#FFFEFA", border: `1px solid ${isActive ? meta.border : "#D8D2BF"}`, borderLeft: `4px solid ${meta.border}`, borderRadius: 3, padding: "12px 14px" }}>
-                        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 600, color: meta.color }}>{String(counts[s.key]).padStart(2, "0")}</div>
-                        <div style={{ fontSize: 11, color: "#5A5444", marginTop: 2 }}>{s.label}</div>
-                      </button>
-                    );
-                  })}
-                </div>
+                {isVisitor && (
+                  <div className="note-bar">
+                    Visitor access — name, title, current project and vacation dates only.
+                  </div>
+                )}
+
+                {!isVisitor && (
+                  <div className="stat-grid">
+                    {[{ key: "active", label: "On project" }, { key: "transitioning", label: "Wrapping up" }, { key: "available", label: "Available" }, { key: "vacation", label: "On vacation" }].map(s => {
+                      const meta = STATUS_META[s.key];
+                      const isActive = filter === s.key;
+                      return (
+                        <button key={s.key} onClick={() => setFilter(isActive ? "all" : s.key)} style={{ textAlign: "left", cursor: "pointer", background: isActive ? meta.bg : "#FFFEFA", border: `1px solid ${isActive ? meta.border : "#D8D2BF"}`, borderLeft: `4px solid ${meta.border}`, borderRadius: 3, padding: "12px 14px" }}>
+                          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 600, color: meta.color }}>{String(counts[s.key]).padStart(2, "0")}</div>
+                          <div style={{ fontSize: 11, color: "#5A5444", marginTop: 2 }}>{s.label}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {positions.length > 0 && (
                   <div style={{ marginBottom: 14 }}>
@@ -1980,7 +2107,7 @@
                   </div>
                 )}
 
-                {rosterTrades.length > 0 && (
+                {!isVisitor && rosterTrades.length > 0 && (
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 7 }}>FILTER BY TRADE</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -1995,7 +2122,7 @@
                 )}
 
                 <div className="search-bar">
-                  <input className="cb-input" placeholder="Search name, project, position or trade" value={query} onChange={e => setQuery(e.target.value)} />
+                  <input className="cb-input" placeholder={isVisitor ? "Search name, project or title" : "Search name, project, position or trade"} value={query} onChange={e => setQuery(e.target.value)} />
                   {(filter !== "all" || positionFilter !== "all" || tradeFilter !== "all") && (
                     <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setFilter("all"); setPositionFilter("all"); setTradeFilter("all"); }}>Clear ×</button>
                   )}
@@ -2005,10 +2132,28 @@
                 {loading ? (
                   <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>Connecting to database…</div>
                 ) : filtered.length === 0 ? (
-                  <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270" }}>{roster.length === 0 ? "No crew yet — add your first person." : "No one matches this filter."}</div>
+                  <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270" }}>{roster.length === 0 ? (isVisitor ? "No crew on the board yet." : "No crew yet — add your first person.") : "No one matches this filter."}</div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {filtered.map(p => {
+                      if (isVisitor) {
+                        return (
+                          <div key={p.id} className="roster-card plain" style={{ borderLeft: "4px solid #C9C2AC" }}>
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 15 }}>{p.name}</div>
+                              {p.position && <div style={{ fontSize: 12, color: "#1F4E78", marginTop: 2, fontWeight: 500 }}>{p.position}</div>}
+                            </div>
+                            <div style={{ fontSize: 13 }}>
+                              <div><span style={{ color: "#8A8270" }}>Current: </span>{p.current_project || "—"}</div>
+                              {p.vacation_start && p.vacation_end && (
+                                <div style={{ marginTop: 3, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#7A3B3B" }}>
+                                  Vacation {fmt(p.vacation_start)} – {fmt(p.vacation_end)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
                       const meta = STATUS_META[p.status];
                       const du = daysUntil(p.project_end);
                       return (
@@ -2044,7 +2189,9 @@
 
             {/* ── MANPOWER TAB ───────────────────────────────────────────── */}
             {tab === "manpower" && (
-              <ManpowerView user={user} role={role} notify={notify} onRequestSubmitted={load} />
+              isVisitor
+                ? <VisitorManpower />
+                : <ManpowerView user={user} role={role} notify={notify} onRequestSubmitted={load} />
             )}
 
             <div style={{ marginTop: 32, fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace" }}>
