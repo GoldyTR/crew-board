@@ -39,6 +39,13 @@
       border-radius: 3px; padding: 11px 18px; cursor: pointer; white-space: nowrap;
     }
     .cb-btn-danger:hover { background: #F6E8E8; }
+    .cb-btn-danger-solid {
+      font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px;
+      background: #9A3C3C; color: #fff; border: 1px solid #9A3C3C;
+      border-radius: 3px; padding: 11px 18px; cursor: pointer; white-space: nowrap;
+    }
+    .cb-btn-danger-solid:hover { background: #7A3030; }
+    .cb-btn-danger-solid:disabled { opacity: 0.4; cursor: not-allowed; }
     .cb-btn-approve {
       font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px;
       background: #3E6F5C; color: #fff; border: 1px solid #3E6F5C;
@@ -141,6 +148,11 @@
     .mp-num:focus { outline: 2px solid #1F4E78; outline-offset: 1px; }
     .mp-num:disabled { background: #F2EFE4; color: #8A8270; }
     .mp-readonly { font-family: 'JetBrains Mono', monospace; font-size: 13px; padding: 6px 8px; display: inline-block; }
+    .trade-x {
+      background: none; border: none; cursor: pointer; color: #B9B3A0;
+      font-size: 14px; line-height: 1; padding: 0 0 0 6px;
+    }
+    .trade-x:hover { color: #9A3C3C; }
     .roll-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #FFFEFA; }
     .roll-table th {
       font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em;
@@ -173,6 +185,10 @@
     .status-chip {
       font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em;
       border-radius: 3px; padding: 2px 7px; border: 1px solid;
+    }
+    .danger-box {
+      font-size: 12px; color: #9A3C3C; background: #F6E8E8; border: 1px solid #C98787;
+      border-radius: 3px; padding: 10px 12px; line-height: 1.5;
     }
   </style>
 </head>
@@ -235,8 +251,8 @@
     }
 
     // Every lookup goes through this. Postgres dates arrive as "YYYY-MM-DD",
-    // but a timestamp or a padded value would break naive string equality and
-    // silently zero out the whole board — which is exactly what happened before.
+    // but a timestamp or padded value would break naive string equality and
+    // silently zero out the board.
     const periodKeyOf = (row) => row.period_date ? String(row.period_date).slice(0, 10) : "now";
 
     function daysUntil(dateStr) {
@@ -380,9 +396,7 @@
       async function handleForgot() {
         if (!email) { setMessage({ text: "Enter your email address above first.", type: "error" }); return; }
         setLoading(true); setMessage(null);
-        const { error } = await sb.auth.resetPasswordForEmail(email, {
-          redirectTo: "https://goldytr.github.io/crew-board/",
-        });
+        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: "https://goldytr.github.io/crew-board/" });
         if (error) { setMessage({ text: error.message, type: "error" }); }
         else { setMessage({ text: "Password reset email sent — check your inbox.", type: "ok" }); setView("login"); }
         setLoading(false);
@@ -437,7 +451,6 @@
         const { data, error } = await sb.auth.signUp({ email, password });
         if (error) { setMessage({ text: error.message, type: "error" }); setLoading(false); return; }
         if (data?.user) {
-          // role and status are pinned by the database insert policy too.
           const { error: roleErr } = await sb.from("user_roles").insert({
             user_id: data.user.id, email: data.user.email, full_name: fullName,
             role: "member", status: "pending",
@@ -446,7 +459,7 @@
             setMessage({ text: "Account created, but the access request failed to register: " + roleErr.message + " — please contact your manager.", type: "error" });
             setLoading(false); return;
           }
-          await sendEmail(OWNER_EMAIL, "New Access Request — Crew Board", `<p><strong>${fullName}</strong> (${email}) has requested access to the Crew Board.</p>`);
+          await sendEmail(OWNER_EMAIL, "New Access Request — Crew Board", `<p><strong>${fullName}</strong> (${email}) has requested access.</p>`);
         }
         setMessage({ text: "Request submitted — an Admin will approve your access shortly.", type: "ok" });
         setLoading(false);
@@ -524,8 +537,6 @@
     const ROSTER_FIELDS = ["name","position","trade","current_project","project_end","next_project","vacation_start","vacation_end","comments"];
     const DATE_FIELDS = ["project_end", "vacation_start", "vacation_end"];
 
-    // The approver reviews and corrects before approving. What gets applied is
-    // the corrected version; requests.payload keeps the original submission.
     function RequestCard({ r, roster, onApprove, onReject }) {
       const [expanded, setExpanded] = useState(false);
       const original = useMemo(() => {
@@ -550,7 +561,6 @@
         kind === "manpower" ? <span>submitted manpower for <strong>{original.project_name}</strong></span> :
         <span>requested to {r.action === "add" ? "add" : r.action === "edit" ? "edit" : "remove"} <strong>{original.name}</strong></span>;
 
-      // Only trade rows are editable; the total is derived on write.
       const gridRows = Array.isArray(draft.rows) ? draft.rows.filter(x => x.trade_id != null) : [];
       const hasGrid = (kind === "manpower" || kind === "project") && Array.isArray(draft.rows);
 
@@ -623,7 +633,7 @@
               )}
 
               {kind === "roster" && r.action === "remove" && (
-                <div style={{ fontSize: 12, color: "#9A3C3C", background: "#F6E8E8", padding: "8px 12px", borderRadius: 3, marginBottom: 12 }}>
+                <div className="danger-box" style={{ marginBottom: 12 }}>
                   This will permanently remove <strong>{original.name}</strong> from the board.
                 </div>
               )}
@@ -712,17 +722,12 @@
                     const x = gx + (groupW - barW * series.length) / 2 + ri * barW;
                     return (
                       <g key={r.name}>
-                        <rect x={x} y={padT + plotH - h} width={Math.max(2, barW - 2)} height={h}
-                          fill={COLORS[ri % COLORS.length]} opacity={r.faded ? 0.4 : 1} />
-                        {v > 0 && (
-                          <text x={x + (barW - 2) / 2} y={padT + plotH - h - 4} textAnchor="middle"
-                            fontSize="9" fill="#5A5444" fontFamily="'JetBrains Mono', monospace">{v}</text>
-                        )}
+                        <rect x={x} y={padT + plotH - h} width={Math.max(2, barW - 2)} height={h} fill={COLORS[ri % COLORS.length]} />
+                        {v > 0 && <text x={x + (barW - 2) / 2} y={padT + plotH - h - 4} textAnchor="middle" fontSize="9" fill="#5A5444" fontFamily="'JetBrains Mono', monospace">{v}</text>}
                       </g>
                     );
                   })}
-                  <text x={gx + groupW / 2} y={H - padB + 16} textAnchor="middle" fontSize="9"
-                    fill="#5A5444" fontFamily="'JetBrains Mono', monospace">{p.short}</text>
+                  <text x={gx + groupW / 2} y={H - padB + 16} textAnchor="middle" fontSize="9" fill="#5A5444" fontFamily="'JetBrains Mono', monospace">{p.short}</text>
                 </g>
               );
             })}
@@ -731,7 +736,7 @@
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 6 }}>
               {series.map((r, i) => (
                 <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#5A5444" }}>
-                  <span style={{ width: 10, height: 10, background: COLORS[i % COLORS.length], opacity: r.faded ? 0.4 : 1, borderRadius: 2 }} />
+                  <span style={{ width: 10, height: 10, background: COLORS[i % COLORS.length], borderRadius: 2 }} />
                   {r.name}
                 </div>
               ))}
@@ -790,9 +795,6 @@
 
     // ── Manpower: visitor ─────────────────────────────────────────────────────
 
-    // Reads manpower_summary, which rolls headcount up across every active
-    // project. No project is identifiable, and the manpower table itself is
-    // closed to visitors at the policy level.
     function VisitorManpower() {
       const [trades, setTrades] = useState([]);
       const [summary, setSummary] = useState([]);
@@ -826,15 +828,11 @@
       const series = activeTrades.map(t => ({ name: t.name, values: periods.map(p => at(t.id, p.key)) }));
 
       if (loading) return (
-        <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
-          Loading manpower…
-        </div>
+        <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>Loading manpower…</div>
       );
 
       if (summary.length === 0) return (
-        <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 40, textAlign: "center", color: "#8A8270" }}>
-          No manpower has been entered yet.
-        </div>
+        <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 40, textAlign: "center", color: "#8A8270" }}>No manpower has been entered yet.</div>
       );
 
       return (
@@ -888,7 +886,7 @@
       );
     }
 
-    // ── Manpower: request modal ───────────────────────────────────────────────
+    // ── Manpower: modals ──────────────────────────────────────────────────────
 
     function ProjectRequestModal({ trades, periods, saving, onCancel, onSubmit }) {
       const [name, setName] = useState("");
@@ -916,11 +914,9 @@
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()}>
           <div className="modal-box" style={{ maxWidth: 680 }}>
             <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 14 }}>Request new project</div>
-
             <Field label="Project name">
               <input className="cb-input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Dry Creek WTP" />
             </Field>
-
             <div className="form-row-2" style={{ marginTop: 12 }}>
               <Field label="Start date"><input className="cb-input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></Field>
               <Field label="End date"><input className="cb-input" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></Field>
@@ -960,6 +956,77 @@
       );
     }
 
+    // Rename a project and adjust its dates. Status is not editable here — the
+    // database trigger rejects a status change from anyone but a manager, so
+    // exposing it would only produce failures.
+    function EditProjectModal({ project, saving, onCancel, onSave }) {
+      const [name, setName] = useState(project.name || "");
+      const [startDate, setStartDate] = useState(project.start_date ? String(project.start_date).slice(0, 10) : "");
+      const [endDate, setEndDate] = useState(project.end_date ? String(project.end_date).slice(0, 10) : "");
+      const datesBad = startDate && endDate && endDate < startDate;
+      const changed = name.trim() !== (project.name || "")
+        || (startDate || null) !== (project.start_date ? String(project.start_date).slice(0, 10) : null)
+        || (endDate || null) !== (project.end_date ? String(project.end_date).slice(0, 10) : null);
+
+      return (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()}>
+          <div className="modal-box" style={{ maxWidth: 460 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 14 }}>Edit project</div>
+            <Field label="Project name">
+              <input className="cb-input" value={name} onChange={e => setName(e.target.value)} />
+            </Field>
+            <div style={{ fontSize: 12, color: "#7A7461", marginTop: 8, lineHeight: 1.5 }}>
+              Renaming changes it everywhere at once — the rollup groups on this name.
+            </div>
+            <div className="form-row-2" style={{ marginTop: 14 }}>
+              <Field label="Start date"><input className="cb-input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></Field>
+              <Field label="End date"><input className="cb-input" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></Field>
+            </div>
+            {datesBad && <div style={{ fontSize: 12, color: "#9A3C3C", marginTop: 8 }}>End date is before the start date.</div>}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+              <button className="cb-btn-ghost" onClick={onCancel} disabled={saving}>Cancel</button>
+              <button className="cb-btn" disabled={!name.trim() || !changed || saving || datesBad}
+                onClick={() => onSave({ name: name.trim(), start_date: startDate || null, end_date: endDate || null })}>
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Permanent deletion asks for the project name to be typed. Everything it
+    // destroys is listed, because none of it can be recovered.
+    function DeleteProjectModal({ project, saving, onCancel, onDelete }) {
+      const [typed, setTyped] = useState("");
+      const matches = typed.trim().toLowerCase() === (project.name || "").toLowerCase();
+      return (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()}>
+          <div className="modal-box" style={{ maxWidth: 460 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 14 }}>Delete project</div>
+            <div className="danger-box" style={{ marginBottom: 16 }}>
+              Deleting <strong>{project.name}</strong> permanently removes its manpower,
+              its headcount history, its forecast snapshots, its comments and its
+              assignments. This cannot be undone.
+              <div style={{ marginTop: 8 }}>
+                If the job has simply finished, <strong>Mark complete</strong> keeps all of
+                that and only takes it out of the forecast.
+              </div>
+            </div>
+            <Field label={`Type "${project.name}" to confirm`}>
+              <input className="cb-input" value={typed} onChange={e => setTyped(e.target.value)} placeholder={project.name} />
+            </Field>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+              <button className="cb-btn-ghost" onClick={onCancel} disabled={saving}>Cancel</button>
+              <button className="cb-btn-danger-solid" disabled={!matches || saving} onClick={onDelete}>
+                {saving ? "Deleting…" : "Delete permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // ── Manpower: full view ───────────────────────────────────────────────────
 
     function ManpowerView({ user, role, fullName, notify, onRequestSubmitted }) {
@@ -983,6 +1050,9 @@
       const [commentDraft, setCommentDraft] = useState({});
       const [saving, setSaving] = useState(false);
       const [showProjectModal, setShowProjectModal] = useState(false);
+      const [editProject, setEditProject] = useState(null);
+      const [deleteProject, setDeleteProject] = useState(null);
+      const [confirmTrade, setConfirmTrade] = useState(null);
       const [askTrade, setAskTrade] = useState(false);
       const [newTradeName, setNewTradeName] = useState("");
       const [showAssign, setShowAssign] = useState(false);
@@ -1061,6 +1131,8 @@
         return approvalRequired ? "request" : "write";
       }
       const canComment = (projectId) => isAdmin || myProjectIds.has(projectId);
+      // Mirrors projects_update: managers anywhere, assigned members while active.
+      const canEditDetails = (proj) => isAdmin || (proj.status === "approved" && myProjectIds.has(proj.id));
 
       const cell = useCallback((projectId, tradeId, periodKey) => {
         return rows.find(x =>
@@ -1097,8 +1169,8 @@
         setDrafts(d => Object.assign({}, d, { [draftKey(projectId, tradeId, periodKey)]: v }));
       }
 
-      // Total shown on a card is the sum of its trade lines. Projects that only
-      // ever had a typed total (before totals became derived) fall back to the
+      // Total on a card is the sum of its trade lines. Projects that only ever
+      // had a typed total, from before totals became derived, fall back to the
       // stored value so their history still reads correctly.
       function totalFor(projectId, periodKey) {
         const on = tradesOn(projectId);
@@ -1134,6 +1206,33 @@
           const k = draftKey(projectId, tradeId, p.key);
           setDrafts(d => (k in d) ? d : Object.assign({}, d, { [k]: "0" }));
         });
+      }
+
+      // Removing a trade deletes its live rows for this project. The forecast
+      // snapshots and the actuals log are separate append-only tables, so the
+      // history survives even though the line disappears. The database trigger
+      // recalculates the project total as the rows go.
+      async function removeTradeFromProject(projectId, tradeId) {
+        const savedRows = rows.some(r => r.project_id === projectId && r.trade_id === tradeId);
+        setConfirmTrade(null);
+
+        setAddedTrades(a => Object.assign({}, a, {
+          [projectId]: (a[projectId] || []).filter(id => id !== tradeId),
+        }));
+        setDrafts(d => {
+          const next = Object.assign({}, d);
+          periods.forEach(p => { delete next[draftKey(projectId, tradeId, p.key)]; });
+          return next;
+        });
+
+        if (!savedRows) { notify("Trade removed"); return; }
+
+        setSaving(true);
+        const { error } = await sb.from("manpower").delete().eq("project_id", projectId).eq("trade_id", tradeId);
+        setSaving(false);
+        if (error) { notify("Could not remove the trade: " + error.message, "error"); return; }
+        notify("Trade removed");
+        load();
       }
 
       // ── Save ────────────────────────────────────────────────────────────────
@@ -1243,13 +1342,38 @@
         if (onRequestSubmitted) onRequestSubmitted();
       }
 
+      async function saveProjectDetails(patch) {
+        setSaving(true);
+        const { error } = await sb.from("projects").update(patch).eq("id", editProject.id);
+        setSaving(false);
+        if (error) {
+          notify(error.code === "23505"
+            ? `A project named "${patch.name}" already exists.`
+            : "Could not save: " + error.message, "error");
+          return;
+        }
+        setEditProject(null);
+        notify("Project updated");
+        load();
+      }
+
       async function setProjectStatus(proj, status) {
-        const patch = { status };
-        patch.completed_at = status === "completed" ? new Date().toISOString() : null;
+        const patch = { status, completed_at: status === "completed" ? new Date().toISOString() : null };
         const { error } = await sb.from("projects").update(patch).eq("id", proj.id);
         setConfirmDone(null);
         if (error) { notify("Could not update the project: " + error.message, "error"); return; }
         notify(status === "completed" ? `${proj.name} marked complete` : `${proj.name} reopened`);
+        load();
+      }
+
+      async function removeProject() {
+        setSaving(true);
+        const { error } = await sb.from("projects").delete().eq("id", deleteProject.id);
+        setSaving(false);
+        if (error) { notify("Delete failed: " + error.message, "error"); return; }
+        const name = deleteProject.name;
+        setDeleteProject(null);
+        notify(`${name} deleted`);
         load();
       }
 
@@ -1258,8 +1382,7 @@
         if (!body) return;
         setSaving(true);
         const { error } = await sb.from("project_comments").insert({
-          project_id: projectId, user_id: user.id,
-          author_name: fullName || user.email, body,
+          project_id: projectId, user_id: user.id, author_name: fullName || user.email, body,
         });
         setSaving(false);
         if (error) { notify("Comment failed: " + error.message, "error"); return; }
@@ -1377,6 +1500,10 @@
               <input className="cb-input" value={newTradeName} onChange={e => setNewTradeName(e.target.value)}
                 placeholder="e.g. Pipefitters" onKeyDown={e => e.key === "Enter" && submitNewTrade()} />
             </Field>
+            <div style={{ fontSize: 12, color: "#7A7461", marginTop: 10, lineHeight: 1.5 }}>
+              Once approved this becomes selectable on any project. An Admin can correct the
+              spelling before approving.
+            </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
               <button className="cb-btn-ghost" onClick={() => setAskTrade(false)}>Cancel</button>
               <button className="cb-btn" disabled={!newTradeName.trim() || saving} onClick={submitNewTrade}>{saving ? "Submitting…" : "Submit"}</button>
@@ -1447,7 +1574,13 @@
                       )}
                       {onProject.map(t => (
                         <tr key={t.id}>
-                          <td>{t.name}</td>
+                          <td>
+                            {t.name}
+                            {editable && (
+                              <button className="trade-x" title={"Remove " + t.name}
+                                onClick={() => setConfirmTrade({ project: proj, trade: t })}>×</button>
+                            )}
+                          </td>
                           {periods.map(p => (
                             <td key={p.key}>
                               <input className="mp-num" inputMode="numeric" disabled={!editable}
@@ -1477,6 +1610,8 @@
                 )}
 
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14, flexWrap: "wrap" }}>
+                  {isAdmin && <button className="cb-btn-danger" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setDeleteProject(proj)}>Delete</button>}
+                  {canEditDetails(proj) && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setEditProject(proj)}>Edit details</button>}
                   {isAdmin && !done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setConfirmDone(proj)}>Mark complete</button>}
                   {isAdmin && done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setProjectStatus(proj, "approved")}>Reopen</button>}
                   {editable && dirty && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => clearDrafts(proj.id)}>Discard</button>}
@@ -1531,9 +1666,7 @@
       }
 
       if (loading) return (
-        <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
-          Loading manpower…
-        </div>
+        <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>Loading manpower…</div>
       );
 
       if (projects.length === 0) return (
@@ -1716,7 +1849,37 @@
             <ProjectRequestModal trades={trades} periods={periods} saving={saving}
               onCancel={() => setShowProjectModal(false)} onSubmit={submitNewProject} />
           )}
+          {editProject && (
+            <EditProjectModal project={editProject} saving={saving}
+              onCancel={() => setEditProject(null)} onSave={saveProjectDetails} />
+          )}
+          {deleteProject && (
+            <DeleteProjectModal project={deleteProject} saving={saving}
+              onCancel={() => setDeleteProject(null)} onDelete={removeProject} />
+          )}
           {tradeModal}
+
+          {confirmTrade && (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setConfirmTrade(null)}>
+              <div className="modal-box" style={{ maxWidth: 420 }}>
+                <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>
+                  Remove {confirmTrade.trade.name} from {confirmTrade.project.name}?
+                </div>
+                <div style={{ fontSize: 13, color: "#6B6354", marginBottom: 20, lineHeight: 1.5 }}>
+                  Its current and forecast numbers on this project are deleted, and the
+                  project total is recalculated without them. The headcount history and
+                  past forecast snapshots are kept.
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button className="cb-btn-ghost" onClick={() => setConfirmTrade(null)}>Cancel</button>
+                  <button className="cb-btn-danger" disabled={saving}
+                    onClick={() => removeTradeFromProject(confirmTrade.project.id, confirmTrade.trade.id)}>
+                    {saving ? "Removing…" : "Remove trade"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {confirmDone && (
             <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setConfirmDone(null)}>
@@ -1767,7 +1930,6 @@
 
       const load = useCallback(async () => {
         // Visitors read roster_public — every member column except next_project.
-        // The roster table itself is closed to them at the policy level.
         const { data } = await sb.from(isVisitor ? "roster_public" : "roster").select("*").order("name");
         setRoster(data || []);
         if (!fullName) {
@@ -1893,9 +2055,8 @@
           `<p>Hi ${userRole.full_name || "there"},</p><p>Your request to <strong>${actionLabel}</strong> has been <strong>${approved ? "approved" : "rejected"}</strong>.</p>`);
       }
 
-      // Writes approved trade rows. Total rows are skipped on purpose — the
-      // database trigger derives them, so writing one here would be overwritten
-      // anyway and could disagree in the meantime.
+      // Writes approved trade rows. Total rows are skipped — the database
+      // trigger derives them.
       async function writeManpowerRows(projectId, payload) {
         const { data: existing } = await sb.from("manpower").select("*").eq("project_id", projectId);
         const cur = existing || [];
@@ -1922,8 +2083,6 @@
         return null;
       }
 
-      // `payload` is the approver's reviewed version, which may differ from
-      // req.payload. The original submission stays on the request row.
       async function approveRequest(req, payload) {
         const kind = req.kind || "roster";
         let error = null;
