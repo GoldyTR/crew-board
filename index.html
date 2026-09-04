@@ -175,6 +175,16 @@
     }
     .move-card.hire { border-left-color: #C9821F; }
     .move-card.avail { border-left-color: #1F4E78; }
+    .pool-cols { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 520px) { .pool-cols { grid-template-columns: 1fr 1fr; } }
+    .pool-head {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em;
+      color: #8A8270; margin-bottom: 4px;
+    }
+    .pool-line {
+      font-size: 12px; display: flex; justify-content: space-between;
+      gap: 10px; padding: 2px 0; border-bottom: 1px solid #F1EEE3;
+    }
     .trade-toggle {
       font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
       padding: 5px 12px; border-radius: 99px; cursor: pointer;
@@ -1034,7 +1044,7 @@
 
     // ── Manpower: full view ───────────────────────────────────────────────────
 
-    function ManpowerView({ user, role, fullName, notify, onRequestSubmitted }) {
+    function ManpowerView({ user, role, fullName, notify, dataVersion, onRequestSubmitted }) {
       const isOwner = isOwnerRole(role);
       const isAdmin = isManagerRole(role);
 
@@ -1092,6 +1102,9 @@
 
       useEffect(() => { load(); }, [load]);
 
+      // An approval elsewhere on the page reloads this tab straight away.
+      useEffect(() => { if (dataVersion) load(); }, [dataVersion]);
+
       useEffect(() => {
         const ch = sb.channel("manpower-changes")
           .on("postgres_changes", { event: "*", schema: "public", table: "manpower" }, () => load())
@@ -1101,7 +1114,10 @@
           .on("postgres_changes", { event: "*", schema: "public", table: "project_comments" }, () => load())
           .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, () => load())
           .subscribe();
-        return () => { sb.removeChannel(ch); };
+        // Realtime only streams tables in the supabase_realtime publication.
+        // The poll is the backstop if one is ever missing.
+        const poll = setInterval(() => load(), 20000);
+        return () => { sb.removeChannel(ch); clearInterval(poll); };
       }, [load]);
 
       const myProjectIds = useMemo(
@@ -1483,20 +1499,14 @@
             const totalRel = releasing.reduce((s, r) => s + r.count, 0);
             const totalNeed = needing.reduce((s, r) => s + r.count, 0);
 
-            const pool = releasing.map(r => Object.assign({}, r)).sort((a, b) => b.count - a.count);
-            const want = needing.map(r => Object.assign({}, r)).sort((a, b) => b.count - a.count);
-            const transfers = [];
-            pool.forEach(src => {
-              want.forEach(dst => {
-                if (src.count === 0 || dst.count === 0) return;
-                const n = Math.min(src.count, dst.count);
-                transfers.push({ from: src.name, to: dst.name, count: n });
-                src.count -= n; dst.count -= n;
-              });
-            });
+            // Deliberately no project-to-project pairing. Crew released in a
+            // period forms one pool for that trade; which job a given body goes
+            // to is a scheduling call, not something the numbers can decide.
+            releasing.sort((a, b) => b.count - a.count);
+            needing.sort((a, b) => b.count - a.count);
 
             out.push({
-              period: p, from: prev, trade: t, totalRel, totalNeed, transfers, releasing,
+              period: p, from: prev, trade: t, totalRel, totalNeed, releasing, needing,
               hire: Math.max(0, totalNeed - totalRel),
               surplus: Math.max(0, totalRel - totalNeed),
             });
@@ -1806,39 +1816,53 @@
               return (
                 <div key={i} className={"move-card" + (m.hire > 0 ? " hire" : pureSurplus ? " avail" : "")}>
                   <div style={{ fontWeight: 600 }}>{m.trade.name} — {m.period.label}</div>
-                  <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "#9A9381", marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "#9A9381", marginBottom: 8 }}>
                     CHANGE FROM {m.from.label.toUpperCase()}
                   </div>
-                  {m.transfers.length > 0 && (
-                    <div style={{ marginBottom: 6 }}>
-                      {m.transfers.map((t, j) => (
-                        <div key={j} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#3E6F5C" }}>
-                          {t.count} from {t.from} → {t.to}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {pureSurplus && (
-                    <div style={{ marginBottom: 6 }}>
-                      {m.releasing.map((r, j) => (
-                        <div key={j} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#1F4E78" }}>
-                          {r.count} coming off {r.name}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div style={{ fontSize: 12, color: "#5A5444" }}>
+
+                  <div className="pool-cols">
+                    {m.releasing.length > 0 && (
+                      <div>
+                        <div className="pool-head">AVAILABLE — {m.totalRel}</div>
+                        {m.releasing.map((r, j) => (
+                          <div key={j} className="pool-line" style={{ color: "#3E6F5C" }}>
+                            {r.name} <strong>{r.count}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {m.needing.length > 0 && (
+                      <div>
+                        <div className="pool-head">NEEDED — {m.totalNeed}</div>
+                        {m.needing.map((r, j) => (
+                          <div key={j} className="pool-line" style={{ color: "#A4621A" }}>
+                            {r.name} <strong>{r.count}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: 12, color: "#5A5444", marginTop: 8, lineHeight: 1.5 }}>
                     {pureSurplus ? (
                       <strong style={{ color: "#1F4E78" }}>
-                        {m.surplus} additional {m.trade.name.toLowerCase()} available — no project needs them this period.
+                        {m.surplus} {m.trade.name.toLowerCase()} available — no project needs them this period.
                       </strong>
+                    ) : m.totalRel === 0 ? (
+                      <strong style={{ color: "#A4621A" }}>
+                        Nothing releasing this period — hire {m.hire}.
+                      </strong>
+                    ) : m.hire > 0 ? (
+                      <React.Fragment>
+                        <strong style={{ color: "#3E6F5C" }}>{m.totalRel} available</strong> from the projects above,
+                        against <strong>{m.totalNeed} needed</strong>.{" "}
+                        <strong style={{ color: "#A4621A" }}>Hire {m.hire}.</strong>
+                      </React.Fragment>
                     ) : (
                       <React.Fragment>
-                        {m.totalNeed > 0 && <span>{m.totalNeed} needed. </span>}
-                        {m.totalRel > 0 && <span>{m.totalRel} releasing. </span>}
-                        {m.hire > 0 && <strong style={{ color: "#A4621A" }}>Hire {m.hire}.</strong>}
-                        {m.surplus > 0 && <strong style={{ color: "#1F4E78" }}> {m.surplus} spare after transfers.</strong>}
-                        {m.hire === 0 && m.surplus === 0 && m.transfers.length > 0 && <strong style={{ color: "#3E6F5C" }}>Fully covered by transfers.</strong>}
+                        <strong style={{ color: "#3E6F5C" }}>{m.totalNeed} can be covered</strong> from the {m.totalRel} coming
+                        available, in any combination.
+                        {m.surplus > 0 && <span> <strong style={{ color: "#1F4E78" }}>{m.surplus} spare.</strong></span>}
                       </React.Fragment>
                     )}
                   </div>
@@ -1959,6 +1983,9 @@
       const [editing, setEditing] = useState(null);
       const [confirmDelete, setConfirmDelete] = useState(null);
       const [toast, setToast] = useState(null);
+      // Bumped whenever an approval changes shared data, so the manpower tab
+      // reloads immediately rather than waiting for realtime or the poll.
+      const [dataVersion, setDataVersion] = useState(0);
 
       const notify = (message, type = "ok") => setToast({ message, type });
 
@@ -2162,7 +2189,9 @@
         if (error) { notify("Approve failed: " + error.message, "error"); return; }
         await sb.from("requests").update({ status: "approved" }).eq("id", req.id);
         await notifyRequestResult(req, true, payload);
-        notify("Request approved"); load();
+        notify("Request approved");
+        setDataVersion(v => v + 1);
+        load();
       }
 
       async function rejectRequest(id, req) {
@@ -2371,7 +2400,8 @@
             {tab === "manpower" && (
               isVisitor
                 ? <VisitorManpower />
-                : <ManpowerView user={user} role={role} fullName={fullName} notify={notify} onRequestSubmitted={load} />
+                : <ManpowerView user={user} role={role} fullName={fullName} notify={notify}
+                    dataVersion={dataVersion} onRequestSubmitted={load} />
             )}
           </div>
 
