@@ -1061,6 +1061,7 @@
       const [askTrade, setAskTrade] = useState(false);
       const [newTradeName, setNewTradeName] = useState("");
       const [showAssign, setShowAssign] = useState(false);
+      const [projectQuery, setProjectQuery] = useState("");
       const [confirmDone, setConfirmDone] = useState(null);
 
       const periods = useMemo(() => computePeriods(), []);
@@ -1161,6 +1162,19 @@
       }, [rows, trades, activeProjects]);
 
       const draftKey = (projectId, tradeId, periodKey) => `${projectId}|${tradeId}|${periodKey}`;
+
+      // Partial-word search across the project name and the trades on it, so
+      // "creek" finds Dry Creek WTP and "insul" finds every project running
+      // insulators. Multiple words must all match, in any order.
+      const projectMatches = useCallback((proj) => {
+        const q = projectQuery.trim().toLowerCase();
+        if (!q) return true;
+        const hay = (proj.name + " " + tradesOn(proj.id).map(t => t.name).join(" ")).toLowerCase();
+        return q.split(/\s+/).every(tok => hay.indexOf(tok) >= 0);
+      }, [projectQuery, tradesOn]);
+
+      const shownActive = useMemo(() => activeProjects.filter(projectMatches), [activeProjects, projectMatches]);
+      const shownDone   = useMemo(() => doneProjects.filter(projectMatches), [doneProjects, projectMatches]);
 
       function valueOf(projectId, tradeId, periodKey) {
         const k = draftKey(projectId, tradeId, periodKey);
@@ -1834,18 +1848,34 @@
           </div>
 
           <div className="section-title">Projects</div>
-          {activeProjects.map(renderProject)}
+          <div className="search-bar">
+            <input className="cb-input" placeholder="Search projects by name or trade"
+              value={projectQuery} onChange={e => setProjectQuery(e.target.value)} />
+            {projectQuery && (
+              <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }}
+                onClick={() => setProjectQuery("")}>Clear ×</button>
+            )}
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8A8270", marginLeft: "auto" }}>
+              {shownActive.length} / {activeProjects.length}
+            </span>
+          </div>
 
-          {doneProjects.length > 0 && (
+          {shownActive.length === 0 ? (
+            <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 32, textAlign: "center", color: "#8A8270", fontSize: 13 }}>
+              {activeProjects.length === 0 ? "No active projects." : "No active project matches that search."}
+            </div>
+          ) : shownActive.map(renderProject)}
+
+          {shownDone.length > 0 && (
             <div style={{ marginTop: 18 }}>
               <button onClick={() => setShowDone(!showDone)} style={{
                 background: "none", border: "none", cursor: "pointer", padding: 0,
                 fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 16,
                 textTransform: "uppercase", color: "#8A8270", marginBottom: 10,
               }}>
-                {showDone ? "▲" : "▼"} Completed ({doneProjects.length})
+                {showDone ? "▲" : "▼"} Completed ({shownDone.length})
               </button>
-              {showDone && doneProjects.map(renderProject)}
+              {showDone && shownDone.map(renderProject)}
             </div>
           )}
 
