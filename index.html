@@ -130,6 +130,11 @@
     }
     .mp-card-head:hover { background: #FBF9F2; }
     .mp-card-body { border-top: 1px solid #E3DFD1; padding: 14px 16px; }
+    .mp-head-nums {
+      display: flex; align-items: center; gap: 12px;
+      flex-wrap: wrap; justify-content: flex-end;
+    }
+    .mp-head-num { text-align: right; min-width: 34px; }
     .mp-grid { width: 100%; border-collapse: collapse; font-size: 13px; }
     .mp-grid th {
       font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600;
@@ -1042,7 +1047,7 @@
       const [approvalRequired, setApprovalRequired] = useState(false);
       const [members, setMembers] = useState([]);
       const [loading, setLoading] = useState(true);
-      const [expanded, setExpanded] = useState(() => new Set());
+      const [expanded, setExpanded] = useState(null);
       const [autoExpanded, setAutoExpanded] = useState(false);
       const [showDone, setShowDone] = useState(false);
       const [drafts, setDrafts] = useState({});
@@ -1103,24 +1108,23 @@
         [assignments, user.id]
       );
 
-      // A member lands on their own projects already open; everything else stays
-      // collapsed. Runs once so it never fights a manual collapse.
+      // A member lands on their own project already open. Only one card is open
+      // at a time, so this picks the first assigned project in name order.
+      // Runs once so it never fights a manual collapse.
       useEffect(() => {
         if (autoExpanded || loading || isAdmin) return;
         if (myProjectIds.size === 0) return;
-        setExpanded(new Set(myProjectIds));
+        const mine = projects.filter(p => p.status === "approved" && myProjectIds.has(p.id));
+        if (mine.length > 0) setExpanded(mine[0].id);
         setAutoExpanded(true);
-      }, [myProjectIds, isAdmin, loading, autoExpanded]);
+      }, [myProjectIds, isAdmin, loading, autoExpanded, projects]);
 
       const activeProjects = useMemo(() => projects.filter(p => p.status === "approved"), [projects]);
       const doneProjects   = useMemo(() => projects.filter(p => p.status === "completed"), [projects]);
 
+      // Accordion: opening a project collapses whichever one was open.
       function toggleExpanded(id) {
-        setExpanded(s => {
-          const next = new Set(s);
-          if (next.has(id)) next.delete(id); else next.add(id);
-          return next;
-        });
+        setExpanded(cur => (cur === id ? null : id));
       }
 
       // Mirrors can_write_manpower() in the database.
@@ -1517,7 +1521,7 @@
       function renderProject(proj) {
         const done = proj.status === "completed";
         const access = accessFor(proj);
-        const open = expanded.has(proj.id);
+        const open = expanded === proj.id;
         const editable = access === "write" || access === "request";
         const dirty = projectDirty(proj.id);
         const updated = lastUpdatedFor(proj.id);
@@ -1527,7 +1531,7 @@
         const onProject = tradesOn(proj.id);
         const available = trades.filter(t => onProject.every(x => x.id !== t.id));
         const projComments = comments.filter(c => c.project_id === proj.id);
-        const headPeriods = periods.slice(0, 3);
+        const headPeriods = periods;
 
         return (
           <div key={proj.id} className={"mp-card" + (done ? " done" : "")}>
@@ -1545,10 +1549,10 @@
                   {access === "request" && " · SUBMITS FOR APPROVAL"}
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div className="mp-head-nums">
                 {headPeriods.map(p => (
-                  <div key={p.key} style={{ textAlign: "right" }}>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 600, color: "#1B2A33" }}>{totalFor(proj.id, p.key)}</div>
+                  <div key={p.key} className="mp-head-num">
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 600, color: "#1B2A33" }}>{totalFor(proj.id, p.key)}</div>
                     <div style={{ fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: "#9A9381" }}>{p.short}</div>
                   </div>
                 ))}
