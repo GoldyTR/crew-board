@@ -205,6 +205,25 @@
       font-size: 12px; color: #9A3C3C; background: #F6E8E8; border: 1px solid #C98787;
       border-radius: 3px; padding: 10px 12px; line-height: 1.5;
     }
+    .mv-row {
+      background: #FFFEFA; border: 1px solid #D8D2BF; border-left: 4px solid #1F4E78;
+      border-radius: 3px; padding: 10px 14px; margin-bottom: 6px;
+      display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    }
+    .mv-row.overdue { border-left-color: #9A3C3C; background: #FDF7F5; }
+    .mv-row.done { border-left-color: #3E6F5C; }
+    .mv-main { font-size: 13px; min-width: 220px; flex: 1; }
+    .mv-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .mv-mini {
+      font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
+      padding: 6px 11px; border-radius: 3px; cursor: pointer;
+      background: transparent; border: 1px solid #C9C2AC; color: #1B2A33;
+    }
+    .mv-mini:hover { background: #EDE9DC; }
+    .mv-mini.danger { color: #9A3C3C; border-color: #C98787; }
+    .mv-mini.go { color: #fff; background: #3E6F5C; border-color: #3E6F5C; }
+    .mv-mini:disabled { opacity: 0.5; cursor: not-allowed; }
+    .mv-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
   </style>
 </head>
 <body>
@@ -1131,6 +1150,186 @@
       );
     }
 
+    // Every movement in one place, for admins and the owner. Built to be read
+    // in a meeting: overdue first, one line each, actions inline. Anything that
+    // needs the project's detail still lives on the project card.
+    function MovementsBoard({ user, role, notify }) {
+      const [projects, setProjects] = useState([]);
+      const [trades, setTrades] = useState([]);
+      const [movements, setMovements] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [saving, setSaving] = useState(false);
+      const [view, setView] = useState("open");
+      const [reschedule, setReschedule] = useState(null);
+      const [newPeriod, setNewPeriod] = useState("");
+
+      const load = useCallback(async () => {
+        const [pRes, tRes, mRes] = await Promise.all([
+          sb.from("projects").select("id, name, status").order("name"),
+          sb.from("trades").select("id, name").order("name"),
+          sb.from("movements").select("*").order("period_date", { ascending: true }),
+        ]);
+        setProjects(pRes.data || []);
+        setTrades(tRes.data || []);
+        setMovements(mRes.data || []);
+        setLoading(false);
+      }, []);
+
+      useEffect(() => { load(); }, [load]);
+      useEffect(() => {
+        const ch = sb.channel("movements-board")
+          .on("postgres_changes", { event: "*", schema: "public", table: "movements" }, () => load())
+          .subscribe();
+        const poll = setInterval(() => load(), 20000);
+        return () => { sb.removeChannel(ch); clearInterval(poll); };
+      }, [load]);
+
+      const nameOf = (list, id) => { const x = list.find(v => v.id === id); return x ? x.name : "—"; };
+      const today = isoDate(new Date());
+      // A planned movement whose date has passed. These fall outside the
+      // forecast window, so this board is the only place they surface.
+      const isOverdue = (m) => m.status === "planned" && m.period_date && String(m.period_date).slice(0, 10) < today;
+
+      const overdue   = movements.filter(isOverdue);
+      const planned   = movements.filter(m => m.status === "planned" && !isOverdue(m));
+      const completed = movements.filter(m => m.status === "completed");
+      const cancelled = movements.filter(m => m.status === "cancelled");
+
+      const shown = view === "overdue" ? overdue
+        : view === "open" ? overdue.concat(planned)
+        : view === "done" ? completed
+        : view === "cancelled" ? cancelled
+        : movements;
+
+      async function run(fn, args, okMsg) {
+        setSaving(true);
+        const { error } = await sb.rpc(fn, args);
+        setSaving(false);
+        if (error) { notify(error.message, "error"); return false; }
+        notify(okMsg);
+        load();
+        return true;
+      }
+
+      function Chip({ id, label, count, tone }) {
+        const on = view === id;
+        return (
+          <button className="trade-toggle" onClick={() => setView(id)} style={{
+            background: on ? (tone || "#1B2A33") : "#FFFEFA",
+            color: on ? "#F7F4EC" : (tone || "#5A5444"),
+            border: "1px solid " + (on ? (tone || "#1B2A33") : "#C9C2AC"),
+          }}>
+            {label}<span style={{ marginLeft: 6, opacity: 0.75, fontSize: 11 }}>{count}</span>
+          </button>
+        );
+      }
+
+      if (loading) return (
+        <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>Loading movements…</div>
+      );
+
+      return (
+        <div>
+          {overdue.length > 0 && (
+            <div className="danger-box" style={{ marginBottom: 14 }}>
+              <strong>{overdue.length} movement{overdue.length === 1 ? "" : "s"} past their date.</strong>{" "}
+              Sign off if the crew moved, reschedule if it slipped, or cancel if it is not happening.
+            </div>
+          )}
+
+          <div className="mv-tabs">
+            <Chip id="open" label="Open" count={overdue.length + planned.length} />
+            <Chip id="overdue" label="Overdue" count={overdue.length} tone="#9A3C3C" />
+            <Chip id="done" label="Signed off" count={completed.length} tone="#3E6F5C" />
+            <Chip id="cancelled" label="Cancelled" count={cancelled.length} />
+            <Chip id="all" label="All" count={movements.length} />
+          </div>
+
+          {shown.length === 0 ? (
+            <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 32, textAlign: "center", color: "#8A8270", fontSize: 13 }}>
+              Nothing here.
+            </div>
+          ) : shown.map(m => {
+            const od = isOverdue(m);
+            return (
+              <div key={m.id} className={"mv-row" + (od ? " overdue" : m.status === "completed" ? " done" : "")}>
+                <div className="mv-main">
+                  <div style={{ fontSize: 13, color: "#1B2A33" }}>
+                    <strong>{m.headcount}</strong> {nameOf(trades, m.trade_id).toLowerCase()}
+                    {m.from_project_id
+                      ? <span> · {nameOf(projects, m.from_project_id)} → {nameOf(projects, m.to_project_id)}</span>
+                      : <span> · new hire → {nameOf(projects, m.to_project_id)}</span>}
+                  </div>
+                  <div className="comment-meta" style={{ marginTop: 3 }}>
+                    {m.period_date ? fmt(m.period_date).toUpperCase() : "NOW"}
+                    {od && <span style={{ color: "#9A3C3C" }}> · OVERDUE</span>}
+                    {m.original_period && <span> · WAS {fmt(m.original_period).toUpperCase()}</span>}
+                    {m.status === "completed" && <span style={{ color: "#3E6F5C" }}> · SIGNED OFF {fmtStamp(m.completed_at).toUpperCase()}</span>}
+                    {m.status === "cancelled" && <span> · CANCELLED</span>}
+                    {m.reversed_at && m.status === "planned" && <span style={{ color: "#A4621A" }}> · REVERSED</span>}
+                  </div>
+                  {m.note && <div style={{ fontSize: 12, color: "#7A7461", marginTop: 3 }}>{m.note}</div>}
+                </div>
+
+                <div className="mv-actions">
+                  {m.status === "planned" && (
+                    <React.Fragment>
+                      <button className="mv-mini go" disabled={saving}
+                        onClick={() => run("complete_movement", { p_id: m.id }, "Signed off — current numbers updated")}>
+                        Sign off
+                      </button>
+                      <button className="mv-mini" disabled={saving}
+                        onClick={() => { setReschedule(m); setNewPeriod(m.period_date ? String(m.period_date).slice(0, 10) : ""); }}>
+                        Reschedule
+                      </button>
+                      <button className="mv-mini danger" disabled={saving}
+                        onClick={() => run("cancel_movement", { p_id: m.id }, "Movement cancelled")}>
+                        Cancel
+                      </button>
+                    </React.Fragment>
+                  )}
+                  {m.status === "completed" && (
+                    <button className="mv-mini danger" disabled={saving}
+                      onClick={() => run("reverse_movement", { p_id: m.id }, "Sign-off reversed — numbers put back")}>
+                      Reverse
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {reschedule && (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setReschedule(null)}>
+              <div className="modal-box" style={{ maxWidth: 420 }}>
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 4 }}>Reschedule</div>
+                <div style={{ fontSize: 12, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", marginBottom: 16 }}>
+                  {reschedule.headcount} {nameOf(trades, reschedule.trade_id).toUpperCase()} → {nameOf(projects, reschedule.to_project_id).toUpperCase()}
+                </div>
+                <Field label="New date">
+                  <input className="cb-input" type="date" value={newPeriod} onChange={e => setNewPeriod(e.target.value)} />
+                </Field>
+                <div style={{ fontSize: 12, color: "#7A7461", marginTop: 10, lineHeight: 1.5 }}>
+                  Use a month end so it lines up with a forecast period. The date first
+                  committed to is kept on the record.
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+                  <button className="cb-btn-ghost" onClick={() => setReschedule(null)}>Cancel</button>
+                  <button className="cb-btn" disabled={!newPeriod || saving}
+                    onClick={async () => {
+                      const ok = await run("reschedule_movement", { p_id: reschedule.id, p_period: newPeriod }, "Movement rescheduled");
+                      if (ok) setReschedule(null);
+                    }}>
+                    {saving ? "Saving…" : "Reschedule"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     function ManpowerView({ user, role, fullName, notify, dataVersion, onRequestSubmitted }) {
       const isOwner = isOwnerRole(role);
       const isAdmin = isManagerRole(role);
@@ -1162,6 +1361,20 @@
       const [showAssign, setShowAssign] = useState(false);
       const [projectQuery, setProjectQuery] = useState("");
       const [confirmDone, setConfirmDone] = useState(null);
+      const [shiftProject, setShiftProject] = useState(null);
+
+      // A delayed job moves its whole curve rather than being retyped column by
+      // column. Nothing is discarded — rows pushed past the six-month window
+      // keep their dates and reappear as the window advances.
+      async function shiftForecast(proj, months) {
+        setSaving(true);
+        const { error } = await sb.rpc("shift_project_forecast", { p_project: proj.id, p_months: months });
+        setSaving(false);
+        if (error) { notify("Could not shift the forecast: " + error.message, "error"); return; }
+        setShiftProject(null);
+        notify(`${proj.name} forecast moved ${months > 0 ? "out" : "in"} ${Math.abs(months)} month${Math.abs(months) === 1 ? "" : "s"}`);
+        load();
+      }
 
       const periods = useMemo(() => computePeriods(), []);
 
@@ -1810,6 +2023,7 @@
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14, flexWrap: "wrap" }}>
                   {isAdmin && <button className="cb-btn-danger" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setDeleteProject(proj)}>Delete</button>}
                   {canEditDetails(proj) && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setEditProject(proj)}>Edit details</button>}
+                  {editable && !done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setShiftProject(proj)}>Shift forecast</button>}
                   {isAdmin && !done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setConfirmDone(proj)}>Mark complete</button>}
                   {isAdmin && done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setProjectStatus(proj, "approved")}>Reopen</button>}
                   {editable && dirty && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => clearDrafts(proj.id)}>Discard</button>}
@@ -1839,7 +2053,11 @@
                               <div className="comment-meta" style={{ marginTop: 2 }}>
                                 {mv.period_date ? fmt(mv.period_date).toUpperCase() : "NOW"}
                                 {" · "}
-                                {mv.status === "completed" ? "SIGNED OFF " + fmtStamp(mv.completed_at).toUpperCase() : "PLANNED"}
+                                {mv.status === "completed"
+                                  ? "SIGNED OFF " + fmtStamp(mv.completed_at).toUpperCase()
+                                  : (mv.period_date && String(mv.period_date).slice(0, 10) < isoDate(new Date()))
+                                    ? <span style={{ color: "#9A3C3C" }}>OVERDUE</span>
+                                    : "PLANNED"}
                               </div>
                               {mv.note && <div style={{ fontSize: 12, color: "#7A7461", marginTop: 2 }}>{mv.note}</div>}
                               {mv.status === "planned" && canSignOff(mv) && (
@@ -2198,6 +2416,40 @@
             </div>
           )}
 
+          {shiftProject && (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShiftProject(null)}>
+              <div className="modal-box" style={{ maxWidth: 440 }}>
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 4 }}>Shift forecast</div>
+                <div style={{ fontSize: 12, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", marginBottom: 16 }}>
+                  {shiftProject.name.toUpperCase()}
+                </div>
+                <div style={{ fontSize: 13, color: "#5A5444", lineHeight: 1.6, marginBottom: 16 }}>
+                  Moves every forecast month for this project, and its start and end dates,
+                  by the amount you pick. Current on-site numbers are untouched.
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[1, 2, 3, 6].map(n => (
+                    <button key={n} className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }}
+                      disabled={saving} onClick={() => shiftForecast(shiftProject, n)}>
+                      Out {n} month{n === 1 ? "" : "s"}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                  {[1, 2, 3].map(n => (
+                    <button key={n} className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }}
+                      disabled={saving} onClick={() => shiftForecast(shiftProject, -n)}>
+                      In {n} month{n === 1 ? "" : "s"}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+                  <button className="cb-btn-ghost" onClick={() => setShiftProject(null)} disabled={saving}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {confirmDone && (
             <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setConfirmDone(null)}>
               <div className="modal-box" style={{ maxWidth: 400 }}>
@@ -2494,6 +2746,7 @@
             <div className="tab-strip">
               <button className={"tab-btn" + (tab === "roster" ? " active" : "")} onClick={() => setTab("roster")}>Roster</button>
               <button className={"tab-btn" + (tab === "manpower" ? " active" : "")} onClick={() => setTab("manpower")}>Manpower</button>
+              {isAdmin && <button className={"tab-btn" + (tab === "movements" ? " active" : "")} onClick={() => setTab("movements")}>Movements</button>}
             </div>
 
             {isAdmin && visiblePendingUsers.length > 0 && (
@@ -2661,6 +2914,10 @@
                 ? <VisitorManpower />
                 : <ManpowerView user={user} role={role} fullName={fullName} notify={notify}
                     dataVersion={dataVersion} onRequestSubmitted={load} />
+            )}
+
+            {tab === "movements" && isAdmin && (
+              <MovementsBoard user={user} role={role} notify={notify} />
             )}
           </div>
 
