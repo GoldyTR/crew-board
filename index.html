@@ -1044,6 +1044,93 @@
 
     // ── Manpower: full view ───────────────────────────────────────────────────
 
+    // Raises a movement against one gap — a transfer from a project that is
+    // releasing, or a hire. The count is capped by what is actually open on
+    // both sides, so a movement can never over-commit crew that do not exist.
+    function RaiseMovementModal({ gap, saving, onCancel, onSubmit }) {
+      const [toId, setToId] = useState(gap.needing.length ? gap.needing[0].id : null);
+      const [fromId, setFromId] = useState(gap.releasing.length ? String(gap.releasing[0].id) : "hire");
+      const [count, setCount] = useState("");
+      const [note, setNote] = useState("");
+
+      const need = (gap.needing.find(n => n.id === toId) || { count: 0 }).count;
+      const isHire = fromId === "hire";
+      const avail = isHire ? Infinity
+        : (gap.releasing.find(r => String(r.id) === fromId) || { count: 0 }).count;
+      const max = Math.min(need, avail);
+      const n = numOf(count);
+      const tooMany = n > max;
+
+      return (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()}>
+          <div className="modal-box" style={{ maxWidth: 460 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 4 }}>
+              Action gap
+            </div>
+            <div style={{ fontSize: 12, color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", marginBottom: 16 }}>
+              {gap.trade.name.toUpperCase()} · {gap.period.label.toUpperCase()}
+            </div>
+
+            <Field label="Goes to">
+              <select className="cb-input" value={toId || ""} onChange={e => setToId(numOf(e.target.value))}>
+                {gap.needing.map(nd => <option key={nd.id} value={nd.id}>{nd.name} — {nd.count} needed</option>)}
+              </select>
+            </Field>
+
+            <div style={{ marginTop: 12 }}>
+              <Field label="Comes from">
+                <select className="cb-input" value={fromId} onChange={e => setFromId(e.target.value)}>
+                  {gap.releasing.map(r => <option key={r.id} value={String(r.id)}>{r.name} — {r.count} available</option>)}
+                  <option value="hire">New hire</option>
+                </select>
+              </Field>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <Field label={`Headcount${max !== Infinity ? ` (up to ${max})` : ""}`}>
+                <input className="cb-input" inputMode="numeric" value={count}
+                  onChange={e => { if (digitsOnly(e.target.value)) setCount(e.target.value); }}
+                  placeholder={String(max === Infinity ? need : max)} />
+              </Field>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <Field label="Note (optional)">
+                <input className="cb-input" value={note} onChange={e => setNote(e.target.value)}
+                  placeholder="e.g. confirmed with site super" />
+              </Field>
+            </div>
+
+            {tooMany && (
+              <div style={{ fontSize: 12, color: "#9A3C3C", marginTop: 10 }}>
+                That is more than the {max} still open on {isHire ? "this need" : "both sides"}.
+              </div>
+            )}
+
+            <div style={{ fontSize: 12, color: "#7A7461", marginTop: 12, lineHeight: 1.5 }}>
+              This records the commitment. Current headcount only changes when the
+              receiving project signs it off.
+            </div>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+              <button className="cb-btn-ghost" onClick={onCancel} disabled={saving}>Cancel</button>
+              <button className="cb-btn" disabled={!toId || n < 1 || tooMany || saving}
+                onClick={() => onSubmit({
+                  trade_id: gap.trade.id,
+                  period_date: gap.period.date,
+                  to_project_id: toId,
+                  from_project_id: isHire ? null : numOf(fromId),
+                  headcount: n,
+                  note: note.trim(),
+                })}>
+                {saving ? "Saving…" : isHire ? "Raise hire" : "Raise transfer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function ManpowerView({ user, role, fullName, notify, dataVersion, onRequestSubmitted }) {
       const isOwner = isOwnerRole(role);
       const isAdmin = isManagerRole(role);
@@ -1054,6 +1141,8 @@
       const [rows, setRows] = useState([]);
       const [actuals, setActuals] = useState([]);
       const [comments, setComments] = useState([]);
+      const [movements, setMovements] = useState([]);
+      const [raiseGap, setRaiseGap] = useState(null);
       const [approvalRequired, setApprovalRequired] = useState(false);
       const [members, setMembers] = useState([]);
       const [loading, setLoading] = useState(true);
@@ -1077,13 +1166,14 @@
       const periods = useMemo(() => computePeriods(), []);
 
       const load = useCallback(async () => {
-        const [pRes, tRes, aRes, mRes, acRes, cRes, sRes] = await Promise.all([
+        const [pRes, tRes, aRes, mRes, acRes, cRes, mvRes, sRes] = await Promise.all([
           sb.from("projects").select("*").in("status", ["approved", "completed"]).order("name"),
           sb.from("trades").select("*").eq("status", "approved").order("name"),
           sb.from("project_assignments").select("*"),
           sb.from("manpower").select("*"),
           sb.from("manpower_actuals").select("*").order("recorded_on", { ascending: true }),
           sb.from("project_comments").select("*").order("created_at", { ascending: false }),
+          sb.from("movements").select("*").order("created_at", { ascending: false }),
           sb.from("app_settings").select("*").eq("key", "manpower_approval_required").maybeSingle(),
         ]);
         setProjects(pRes.data || []);
@@ -1092,6 +1182,7 @@
         setRows(mRes.data || []);
         setActuals(acRes.data || []);
         setComments(cRes.data || []);
+        setMovements(mvRes.data || []);
         setApprovalRequired(sRes.data?.value === "true");
         if (isAdmin) {
           const { data: us } = await sb.from("user_roles").select("*").eq("status", "approved").order("full_name");
@@ -1112,6 +1203,7 @@
           .on("postgres_changes", { event: "*", schema: "public", table: "trades" }, () => load())
           .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => load())
           .on("postgres_changes", { event: "*", schema: "public", table: "project_comments" }, () => load())
+          .on("postgres_changes", { event: "*", schema: "public", table: "movements" }, () => load())
           .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, () => load())
           .subscribe();
         // Realtime only streams tables in the supabase_realtime publication.
@@ -1452,6 +1544,67 @@
         load();
       }
 
+      // ── Movements ───────────────────────────────────────────────────────────
+
+      const movementPeriodKey = (m) => m.period_date ? String(m.period_date).slice(0, 10) : "now";
+
+      // Planned movements against one gap — trade plus period.
+      const plannedFor = useCallback((tradeId, periodKey) =>
+        movements.filter(m => m.status === "planned" && m.trade_id === tradeId
+          && movementPeriodKey(m) === periodKey),
+        [movements]);
+
+      const projectName = useCallback((id) => {
+        const p = projects.find(x => x.id === id);
+        return p ? p.name : "—";
+      }, [projects]);
+      const tradeName = useCallback((id) => {
+        const t = trades.find(x => x.id === id);
+        return t ? t.name : "—";
+      }, [trades]);
+
+      async function raiseMovement(form) {
+        setSaving(true);
+        const { error } = await sb.from("movements").insert({
+          trade_id: form.trade_id,
+          period_date: form.period_date,
+          to_project_id: form.to_project_id,
+          from_project_id: form.from_project_id,
+          headcount: form.headcount,
+          note: form.note || null,
+          status: "planned",
+          created_by: user.id,
+        });
+        setSaving(false);
+        if (error) { notify("Could not raise the movement: " + error.message, "error"); return; }
+        setRaiseGap(null);
+        notify(form.from_project_id ? "Transfer raised" : "Hire raised");
+        load();
+      }
+
+      // Sign-off runs as a database function: it adjusts the current headcount
+      // on both projects and flips the status together, and the receiving
+      // manager has no write access to the sending project's rows.
+      async function signOffMovement(m) {
+        setSaving(true);
+        const { error } = await sb.rpc("complete_movement", { p_id: m.id });
+        setSaving(false);
+        if (error) { notify("Sign-off failed: " + error.message, "error"); return; }
+        notify("Signed off — current numbers updated");
+        load();
+      }
+
+      async function cancelMovement(m) {
+        setSaving(true);
+        const { error } = await sb.rpc("cancel_movement", { p_id: m.id });
+        setSaving(false);
+        if (error) { notify("Could not cancel: " + error.message, "error"); return; }
+        notify("Movement cancelled");
+        load();
+      }
+
+      const canSignOff = (m) => isAdmin || myProjectIds.has(m.to_project_id);
+
       // ── Rollup and analytics — active projects only ─────────────────────────
 
       const rollup = useMemo(() => {
@@ -1486,15 +1639,30 @@
         for (let i = 1; i < periods.length; i++) {
           const prev = periods[i - 1], p = periods[i];
           activeTrades.forEach(t => {
+            const planned = plannedFor(t.id, p.key);
+            const committedIn = (projId) => planned
+              .filter(m => m.to_project_id === projId)
+              .reduce((s, m) => s + m.headcount, 0);
+            const committedOut = (projId) => planned
+              .filter(m => m.from_project_id === projId)
+              .reduce((s, m) => s + m.headcount, 0);
+
             const releasing = [], needing = [];
             activeProjects.forEach(proj => {
               const tr = rollup.byProject[proj.id] ? rollup.byProject[proj.id][t.id] : null;
               if (!tr) return;
               const delta = (tr[p.key] || 0) - (tr[prev.key] || 0);
-              if (delta < 0) releasing.push({ name: proj.name, count: -delta });
-              if (delta > 0) needing.push({ name: proj.name, count: delta });
+              // What is still open, after whatever has already been committed.
+              if (delta < 0) {
+                const open = -delta - committedOut(proj.id);
+                if (open > 0) releasing.push({ id: proj.id, name: proj.name, count: open });
+              }
+              if (delta > 0) {
+                const open = delta - committedIn(proj.id);
+                if (open > 0) needing.push({ id: proj.id, name: proj.name, count: open });
+              }
             });
-            if (releasing.length === 0 && needing.length === 0) return;
+            if (releasing.length === 0 && needing.length === 0 && planned.length === 0) return;
 
             const totalRel = releasing.reduce((s, r) => s + r.count, 0);
             const totalNeed = needing.reduce((s, r) => s + r.count, 0);
@@ -1506,14 +1674,14 @@
             needing.sort((a, b) => b.count - a.count);
 
             out.push({
-              period: p, from: prev, trade: t, totalRel, totalNeed, releasing, needing,
+              period: p, from: prev, trade: t, totalRel, totalNeed, releasing, needing, planned,
               hire: Math.max(0, totalNeed - totalRel),
               surplus: Math.max(0, totalRel - totalNeed),
             });
           });
         }
         return out;
-      }, [activeProjects, activeTrades, periods, rollup]);
+      }, [activeProjects, activeTrades, periods, rollup, plannedFor]);
 
       const chartSeries = useMemo(() => {
         if (activeTrades.length === 0) return [{ name: "Total", values: periods.map(p => rollup.totals[p.key] || 0) }];
@@ -1555,6 +1723,8 @@
         const onProject = tradesOn(proj.id);
         const available = trades.filter(t => onProject.every(x => x.id !== t.id));
         const projComments = comments.filter(c => c.project_id === proj.id);
+        const inbound = movements.filter(m => m.to_project_id === proj.id && m.status !== "cancelled");
+        const outbound = movements.filter(m => m.from_project_id === proj.id && m.status !== "cancelled");
         const headPeriods = periods;
 
         return (
@@ -1648,6 +1818,58 @@
                       onClick={() => access === "request" ? submitProjectRequest(proj.id) : saveProject(proj.id)}>
                       {saving ? "Saving…" : access === "request" ? "Submit for approval" : "Save"}
                     </button>
+                  )}
+                </div>
+
+                <div style={{ marginTop: 18, borderTop: "1px solid #EDE9DC", paddingTop: 14 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>CREW MOVEMENTS</div>
+                  {inbound.length === 0 && outbound.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "#9A9381", padding: "4px 0" }}>Nothing planned or recorded.</div>
+                  ) : (
+                    <div className="pool-cols">
+                      {inbound.length > 0 && (
+                        <div>
+                          <div className="pool-head">COMING IN</div>
+                          {inbound.map(mv => (
+                            <div key={mv.id} style={{ padding: "6px 0", borderBottom: "1px solid #F1EEE3" }}>
+                              <div style={{ fontSize: 12, color: "#1B2A33" }}>
+                                <strong>{mv.headcount}</strong> {tradeName(mv.trade_id).toLowerCase()}
+                                {mv.from_project_id ? ` from ${projectName(mv.from_project_id)}` : " — new hire"}
+                              </div>
+                              <div className="comment-meta" style={{ marginTop: 2 }}>
+                                {mv.period_date ? fmt(mv.period_date).toUpperCase() : "NOW"}
+                                {" · "}
+                                {mv.status === "completed" ? "SIGNED OFF " + fmtStamp(mv.completed_at).toUpperCase() : "PLANNED"}
+                              </div>
+                              {mv.note && <div style={{ fontSize: 12, color: "#7A7461", marginTop: 2 }}>{mv.note}</div>}
+                              {mv.status === "planned" && canSignOff(mv) && (
+                                <button className="cb-btn-approve" style={{ marginTop: 6 }} disabled={saving}
+                                  onClick={() => signOffMovement(mv)}>
+                                  {mv.from_project_id ? "Sign off — crew arrived" : "Sign off — hired"}
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {outbound.length > 0 && (
+                        <div>
+                          <div className="pool-head">GOING OUT</div>
+                          {outbound.map(mv => (
+                            <div key={mv.id} style={{ padding: "6px 0", borderBottom: "1px solid #F1EEE3" }}>
+                              <div style={{ fontSize: 12, color: "#1B2A33" }}>
+                                <strong>{mv.headcount}</strong> {tradeName(mv.trade_id).toLowerCase()} to {projectName(mv.to_project_id)}
+                              </div>
+                              <div className="comment-meta" style={{ marginTop: 2 }}>
+                                {mv.period_date ? fmt(mv.period_date).toUpperCase() : "NOW"}
+                                {" · "}
+                                {mv.status === "completed" ? "SIGNED OFF " + fmtStamp(mv.completed_at).toUpperCase() : "PLANNED"}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -1848,6 +2070,8 @@
                       <strong style={{ color: "#1F4E78" }}>
                         {m.surplus} {m.trade.name.toLowerCase()} available — no project needs them this period.
                       </strong>
+                    ) : m.totalNeed === 0 && m.totalRel === 0 ? (
+                      <strong style={{ color: "#3E6F5C" }}>Fully actioned — see committed below.</strong>
                     ) : m.totalRel === 0 ? (
                       <strong style={{ color: "#A4621A" }}>
                         Nothing releasing this period — hire {m.hire}.
@@ -1866,6 +2090,37 @@
                       </React.Fragment>
                     )}
                   </div>
+
+                  {m.planned.length > 0 && (
+                    <div style={{ marginTop: 10, borderTop: "1px solid #EDE9DC", paddingTop: 8 }}>
+                      <div className="pool-head">COMMITTED</div>
+                      {m.planned.map(mv => (
+                        <div key={mv.id} className="pool-line" style={{ color: "#5A5444" }}>
+                          <span>
+                            {mv.from_project_id
+                              ? `${projectName(mv.from_project_id)} → ${projectName(mv.to_project_id)}`
+                              : `Hire → ${projectName(mv.to_project_id)}`}
+                          </span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <strong>{mv.headcount}</strong>
+                            {isAdmin && (
+                              <button onClick={() => cancelMovement(mv)} disabled={saving} style={{
+                                background: "none", border: "none", cursor: "pointer",
+                                color: "#9A3C3C", fontSize: 11, padding: 0,
+                              }}>Cancel</button>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {isAdmin && m.totalNeed > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }}
+                        onClick={() => setRaiseGap(m)}>Action this gap</button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1914,6 +2169,10 @@
           {deleteProject && (
             <DeleteProjectModal project={deleteProject} saving={saving}
               onCancel={() => setDeleteProject(null)} onDelete={removeProject} />
+          )}
+          {raiseGap && (
+            <RaiseMovementModal gap={raiseGap} saving={saving}
+              onCancel={() => setRaiseGap(null)} onSubmit={raiseMovement} />
           )}
           {tradeModal}
 
