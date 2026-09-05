@@ -1191,11 +1191,12 @@
       const overdue   = movements.filter(isOverdue);
       const planned   = movements.filter(m => m.status === "planned" && !isOverdue(m));
       const completed = movements.filter(m => m.status === "completed");
+      const cancelled = movements.filter(m => m.status === "cancelled");
 
       const shown = view === "overdue" ? overdue
-        : view === "open" ? overdue.concat(planned)
         : view === "done" ? completed
-        : movements;
+        : view === "cancelled" ? cancelled
+        : overdue.concat(planned);
 
       async function run(fn, args, okMsg) {
         setSaving(true);
@@ -1238,7 +1239,7 @@
             <Chip id="open" label="Open" count={overdue.length + planned.length} />
             <Chip id="overdue" label="Overdue" count={overdue.length} tone="#9A3C3C" />
             <Chip id="done" label="Signed off" count={completed.length} tone="#3E6F5C" />
-            <Chip id="all" label="All" count={movements.length} />
+            <Chip id="cancelled" label="Cancelled" count={cancelled.length} />
           </div>
 
           {shown.length === 0 ? (
