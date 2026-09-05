@@ -1160,6 +1160,7 @@
       const [loading, setLoading] = useState(true);
       const [saving, setSaving] = useState(false);
       const [view, setView] = useState("open");
+      const [confirmClear, setConfirmClear] = useState(false);
 
       const load = useCallback(async () => {
         const [pRes, tRes, mRes] = await Promise.all([
@@ -1208,6 +1209,28 @@
         return true;
       }
 
+      // Only cancelled movements can be deleted, and the database enforces that
+      // as well — a signed-off movement is the explanation for a headcount
+      // change that really happened.
+      async function deleteCancelled(m) {
+        setSaving(true);
+        const { error } = await sb.from("movements").delete().eq("id", m.id);
+        setSaving(false);
+        if (error) { notify("Delete failed: " + error.message, "error"); return; }
+        notify("Movement deleted");
+        load();
+      }
+
+      async function clearCancelled() {
+        setSaving(true);
+        const { error } = await sb.from("movements").delete().eq("status", "cancelled");
+        setSaving(false);
+        setConfirmClear(false);
+        if (error) { notify("Could not clear: " + error.message, "error"); return; }
+        notify("Cancelled movements cleared");
+        load();
+      }
+
       function Chip({ id, label, count, tone }) {
         const on = view === id;
         return (
@@ -1241,6 +1264,14 @@
             <Chip id="done" label="Signed off" count={completed.length} tone="#3E6F5C" />
             <Chip id="cancelled" label="Cancelled" count={cancelled.length} />
           </div>
+
+          {view === "cancelled" && cancelled.length > 0 && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+              <button className="mv-mini danger" disabled={saving} onClick={() => setConfirmClear(true)}>
+                Delete all {cancelled.length} cancelled
+              </button>
+            </div>
+          )}
 
           {shown.length === 0 ? (
             <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 32, textAlign: "center", color: "#8A8270", fontSize: 13 }}>
@@ -1286,11 +1317,35 @@
                       Reverse
                     </button>
                   )}
+                  {m.status === "cancelled" && (
+                    <button className="mv-mini danger" disabled={saving} onClick={() => deleteCancelled(m)}>
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             );
           })}
 
+          {confirmClear && (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setConfirmClear(false)}>
+              <div className="modal-box" style={{ maxWidth: 400 }}>
+                <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>
+                  Delete all {cancelled.length} cancelled movement{cancelled.length === 1 ? "" : "s"}?
+                </div>
+                <div style={{ fontSize: 13, color: "#6B6354", marginBottom: 20, lineHeight: 1.5 }}>
+                  This removes the record that these were ever raised. Signed-off and planned
+                  movements are untouched.
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button className="cb-btn-ghost" onClick={() => setConfirmClear(false)} disabled={saving}>Cancel</button>
+                  <button className="cb-btn-danger-solid" disabled={saving} onClick={clearCancelled}>
+                    {saving ? "Deleting…" : "Delete all"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
