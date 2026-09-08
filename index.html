@@ -942,7 +942,7 @@
         let cancelled = false;
         (async () => {
           const [tRes, sRes] = await Promise.all([
-            sb.from("trades").select("id, name").eq("status", "approved").order("name"),
+            sb.from("trades").select("id, name").in("status", ["approved", "archived"]).order("name"),
             sb.from("manpower_summary").select("*"),
           ]);
           if (cancelled) return;
@@ -1527,6 +1527,8 @@
       const [askTrade, setAskTrade] = useState(false);
       const [newTradeName, setNewTradeName] = useState("");
       const [showAssign, setShowAssign] = useState(false);
+      const [showTrades, setShowTrades] = useState(false);
+      const [confirmTradeDelete, setConfirmTradeDelete] = useState(null);
       const [projectQuery, setProjectQuery] = useState("");
       const [confirmDone, setConfirmDone] = useState(null);
 
@@ -1535,7 +1537,7 @@
       const load = useCallback(async () => {
         const [pRes, tRes, aRes, mRes, acRes, cRes, mvRes, sRes] = await Promise.all([
           sb.from("projects").select("*").in("status", ["approved", "completed"]).order("name"),
-          sb.from("trades").select("*").eq("status", "approved").order("name"),
+          sb.from("trades").select("*").in("status", ["approved", "archived"]).order("name"),
           sb.from("project_assignments").select("*"),
           sb.from("manpower").select("*"),
           sb.from("manpower_actuals").select("*").order("recorded_on", { ascending: true }),
@@ -1597,6 +1599,15 @@
 
       const activeProjects = useMemo(() => projects.filter(p => p.status === "approved"), [projects]);
       const doneProjects   = useMemo(() => projects.filter(p => p.status === "completed"), [projects]);
+
+      // The full list drives rollups, names and existing project rows, so a
+      // retired trade's crew keep counting. Only approved trades are offered in
+      // the pickers.
+      const selectableTrades = useMemo(() => trades.filter(t => t.status === "approved"), [trades]);
+      const tradeUsage = useCallback((tradeId) =>
+        rows.filter(r => r.trade_id === tradeId).length +
+        movements.filter(m => m.trade_id === tradeId).length,
+        [rows, movements]);
 
       // Accordion: opening a project collapses whichever one was open.
       function toggleExpanded(id) {
@@ -1891,6 +1902,28 @@
         load();
       }
 
+      // Retiring keeps every row that references the trade and only removes it
+      // from the pickers. Deleting is possible solely for a trade nothing has
+      // ever used — the database enforces that, not this button.
+      async function setTradeStatus(t, status) {
+        setSaving(true);
+        const { error } = await sb.from("trades").update({ status }).eq("id", t.id);
+        setSaving(false);
+        if (error) { notify("Could not update the trade: " + error.message, "error"); return; }
+        notify(status === "archived" ? `${t.name} retired` : `${t.name} restored`);
+        load();
+      }
+
+      async function deleteTrade(t) {
+        setSaving(true);
+        const { error } = await sb.from("trades").delete().eq("id", t.id);
+        setSaving(false);
+        setConfirmTradeDelete(null);
+        if (error) { notify("Could not delete the trade: " + error.message, "error"); return; }
+        notify(`${t.name} deleted`);
+        load();
+      }
+
       async function toggleApproval() {
         const next = approvalRequired ? "false" : "true";
         const { error } = await sb.from("app_settings")
@@ -2100,7 +2133,7 @@
         const projActuals = actuals.filter(a => a.project_id === proj.id && a.trade_id === null);
         const forecast = periods.reduce((o, p) => { o[p.key] = totalFor(proj.id, p.key); return o; }, {});
         const onProject = tradesOn(proj.id);
-        const available = trades.filter(t => onProject.every(x => x.id !== t.id));
+        const available = selectableTrades.filter(t => onProject.every(x => x.id !== t.id));
         const projComments = comments.filter(c => c.project_id === proj.id);
         const gaps = done ? [] : projectGaps(proj.id);
         const inbound = movements.filter(m => m.to_project_id === proj.id && m.status !== "cancelled");
@@ -2372,7 +2405,7 @@
             <button className="cb-btn" onClick={() => setShowProjectModal(true)}>Request a project</button>
           </div>
           {showProjectModal && (
-            <ProjectRequestModal trades={trades} periods={periods} saving={saving}
+            <ProjectRequestModal trades={selectableTrades} periods={periods} saving={saving}
               onCancel={() => setShowProjectModal(false)} onSubmit={submitNewProject} />
           )}
         </div>
@@ -2384,6 +2417,7 @@
             <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowProjectModal(true)}>+ Request project</button>
             <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => { setAskTrade(true); setNewTradeName(""); }}>+ Request trade</button>
             {isAdmin && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowAssign(!showAssign)}>{showAssign ? "Hide assignments" : "Project assignments"}</button>}
+            {isOwner && <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "8px 12px" }} onClick={() => setShowTrades(!showTrades)}>{showTrades ? "Hide trades" : "Manage trades"}</button>}
             {isOwner && (
               <div style={{ marginLeft: "auto" }}>
                 <button onClick={toggleApproval} style={{
@@ -2421,6 +2455,44 @@
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {isOwner && showTrades && (
+            <div style={{ marginBottom: 24 }}>
+              <div className="section-title">Trades</div>
+              <div style={{ background: "#FFFEFA", border: "1px solid #D8D2BF", borderRadius: 3, padding: "6px 16px 10px" }}>
+                {trades.length === 0 && <div className="mp-empty" style={{ padding: "10px 0" }}>No trades yet.</div>}
+                {trades.map(t => {
+                  const used = tradeUsage(t.id);
+                  const retired = t.status === "archived";
+                  return (
+                    <div key={t.id} className="gap-line">
+                      <span>
+                        <strong style={{ color: retired ? "#8A8270" : "#1B2A33" }}>{t.name}</strong>
+                        <span style={{ color: "#9A9381", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, marginLeft: 8 }}>
+                          {retired ? "RETIRED · " : ""}{used === 0 ? "UNUSED" : `USED IN ${used} ROW${used === 1 ? "" : "S"}`}
+                        </span>
+                      </span>
+                      <span style={{ display: "flex", gap: 6 }}>
+                        {retired ? (
+                          <button className="mv-mini" disabled={saving} onClick={() => setTradeStatus(t, "approved")}>Restore</button>
+                        ) : used > 0 ? (
+                          <button className="mv-mini" disabled={saving} onClick={() => setTradeStatus(t, "archived")}>Retire</button>
+                        ) : null}
+                        {used === 0 && (
+                          <button className="mv-mini danger" disabled={saving} onClick={() => setConfirmTradeDelete(t)}>Delete</button>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 12, color: "#7A7461", marginTop: 8, lineHeight: 1.5 }}>
+                A trade with data can only be retired — it disappears from the pickers, and
+                its crew keep counting everywhere they already appear. Only a trade nothing
+                has ever used can be deleted.
               </div>
             </div>
           )}
@@ -2601,7 +2673,7 @@
           )}
 
           {showProjectModal && (
-            <ProjectRequestModal trades={trades} periods={periods} saving={saving}
+            <ProjectRequestModal trades={selectableTrades} periods={periods} saving={saving}
               onCancel={() => setShowProjectModal(false)} onSubmit={submitNewProject} />
           )}
           {editProject && (
@@ -2634,6 +2706,24 @@
                   <button className="cb-btn-danger" disabled={saving}
                     onClick={() => removeTradeFromProject(confirmTrade.project.id, confirmTrade.trade.id)}>
                     {saving ? "Removing…" : "Remove trade"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {confirmTradeDelete && (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setConfirmTradeDelete(null)}>
+              <div className="modal-box" style={{ maxWidth: 400 }}>
+                <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>Delete {confirmTradeDelete.name}?</div>
+                <div style={{ fontSize: 13, color: "#6B6354", marginBottom: 20, lineHeight: 1.5 }}>
+                  Nothing uses this trade, so nothing is lost. It stops being selectable on
+                  any project, and would have to be requested again to come back.
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button className="cb-btn-ghost" onClick={() => setConfirmTradeDelete(null)} disabled={saving}>Cancel</button>
+                  <button className="cb-btn-danger-solid" disabled={saving} onClick={() => deleteTrade(confirmTradeDelete)}>
+                    {saving ? "Deleting…" : "Delete"}
                   </button>
                 </div>
               </div>
