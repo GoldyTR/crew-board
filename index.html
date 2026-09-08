@@ -1066,13 +1066,15 @@
     // Raises a movement against one gap — a transfer from a project that is
     // releasing, or a hire. The count is capped by what is actually open on
     // both sides, so a movement can never over-commit crew that do not exist.
-    function RaiseMovementModal({ gap, saving, onCancel, onSubmit }) {
-      const [toId, setToId] = useState(gap.needing.length ? gap.needing[0].id : null);
+    function RaiseMovementModal({ gap, canRaiseFor, saving, onCancel, onSubmit }) {
+      // A member can only raise a movement into a project they are assigned to.
+      const targets = gap.needing.filter(nd => canRaiseFor(nd.id));
+      const [toId, setToId] = useState(targets.length ? targets[0].id : null);
       const [fromId, setFromId] = useState(gap.releasing.length ? String(gap.releasing[0].id) : "hire");
       const [count, setCount] = useState("");
       const [note, setNote] = useState("");
 
-      const need = (gap.needing.find(n => n.id === toId) || { count: 0 }).count;
+      const need = (targets.find(n => n.id === toId) || { count: 0 }).count;
       const isHire = fromId === "hire";
       const avail = isHire ? Infinity
         : (gap.releasing.find(r => String(r.id) === fromId) || { count: 0 }).count;
@@ -1092,7 +1094,7 @@
 
             <Field label="Goes to">
               <select className="cb-input" value={toId || ""} onChange={e => setToId(numOf(e.target.value))}>
-                {gap.needing.map(nd => <option key={nd.id} value={nd.id}>{nd.name} — {nd.count} needed</option>)}
+                {targets.map(nd => <option key={nd.id} value={nd.id}>{nd.name} — {nd.count} needed</option>)}
               </select>
             </Field>
 
@@ -1154,23 +1156,27 @@
     // in a meeting: overdue first, one line each, actions inline. Anything that
     // needs the project's detail still lives on the project card.
     function MovementsBoard({ user, role, notify }) {
+      const isAdmin = isManagerRole(role);
       const [projects, setProjects] = useState([]);
       const [trades, setTrades] = useState([]);
       const [movements, setMovements] = useState([]);
+      const [assignments, setAssignments] = useState([]);
       const [loading, setLoading] = useState(true);
       const [saving, setSaving] = useState(false);
       const [view, setView] = useState("open");
       const [confirmClear, setConfirmClear] = useState(false);
 
       const load = useCallback(async () => {
-        const [pRes, tRes, mRes] = await Promise.all([
+        const [pRes, tRes, mRes, aRes] = await Promise.all([
           sb.from("projects").select("id, name, status").order("name"),
           sb.from("trades").select("id, name").order("name"),
           sb.from("movements").select("*").order("period_date", { ascending: true }),
+          sb.from("project_assignments").select("*"),
         ]);
         setProjects(pRes.data || []);
         setTrades(tRes.data || []);
         setMovements(mRes.data || []);
+        setAssignments(aRes.data || []);
         setLoading(false);
       }, []);
 
@@ -1183,16 +1189,30 @@
         return () => { sb.removeChannel(ch); clearInterval(poll); };
       }, [load]);
 
+      const myProjectIds = useMemo(
+        () => new Set(assignments.filter(a => a.user_id === user.id).map(a => a.project_id)),
+        [assignments, user.id]
+      );
+
+      // Managers see the whole picture. A member sees the movements touching
+      // their own projects, in or out, so they can track their job without the
+      // rest of the board's traffic.
+      const mine = useMemo(() => isAdmin ? movements : movements.filter(m =>
+        myProjectIds.has(m.to_project_id) || myProjectIds.has(m.from_project_id)
+      ), [isAdmin, movements, myProjectIds]);
+
+      const canCancel = (m) => isAdmin || myProjectIds.has(m.to_project_id);
+
       const nameOf = (list, id) => { const x = list.find(v => v.id === id); return x ? x.name : "—"; };
       const today = isoDate(new Date());
       // A planned movement whose date has passed. These fall outside the
       // forecast window, so this board is the only place they surface.
       const isOverdue = (m) => m.status === "planned" && m.period_date && String(m.period_date).slice(0, 10) < today;
 
-      const overdue   = movements.filter(isOverdue);
-      const planned   = movements.filter(m => m.status === "planned" && !isOverdue(m));
-      const completed = movements.filter(m => m.status === "completed");
-      const cancelled = movements.filter(m => m.status === "cancelled");
+      const overdue   = mine.filter(isOverdue);
+      const planned   = mine.filter(m => m.status === "planned" && !isOverdue(m));
+      const completed = mine.filter(m => m.status === "completed");
+      const cancelled = mine.filter(m => m.status === "cancelled");
 
       const shown = view === "overdue" ? overdue
         : view === "done" ? completed
@@ -1265,7 +1285,7 @@
             <Chip id="cancelled" label="Cancelled" count={cancelled.length} />
           </div>
 
-          {view === "cancelled" && cancelled.length > 0 && (
+          {view === "cancelled" && cancelled.length > 0 && isAdmin && (
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
               <button className="mv-mini danger" disabled={saving} onClick={() => setConfirmClear(true)}>
                 Delete all {cancelled.length} cancelled
@@ -1301,23 +1321,32 @@
                 <div className="mv-actions">
                   {m.status === "planned" && (
                     <React.Fragment>
-                      <button className="mv-mini go" disabled={saving}
-                        onClick={() => run("complete_movement", { p_id: m.id }, "Signed off — current numbers updated")}>
-                        Sign off
-                      </button>
-                      <button className="mv-mini danger" disabled={saving}
-                        onClick={() => run("cancel_movement", { p_id: m.id }, "Movement cancelled")}>
-                        Cancel
-                      </button>
+                      {isAdmin && (
+                        <button className="mv-mini go" disabled={saving}
+                          onClick={() => run("complete_movement", { p_id: m.id }, "Signed off — current numbers updated")}>
+                          Sign off
+                        </button>
+                      )}
+                      {canCancel(m) && (
+                        <button className="mv-mini danger" disabled={saving}
+                          onClick={() => run("cancel_movement", { p_id: m.id }, "Movement cancelled")}>
+                          Cancel
+                        </button>
+                      )}
+                      {!isAdmin && (
+                        <span style={{ fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace", alignSelf: "center" }}>
+                          AWAITING SIGN-OFF
+                        </span>
+                      )}
                     </React.Fragment>
                   )}
-                  {m.status === "completed" && (
+                  {m.status === "completed" && isAdmin && (
                     <button className="mv-mini danger" disabled={saving}
                       onClick={() => run("reverse_movement", { p_id: m.id }, "Sign-off reversed — numbers put back")}>
                       Reverse
                     </button>
                   )}
-                  {m.status === "cancelled" && (
+                  {m.status === "cancelled" && isAdmin && (
                     <button className="mv-mini danger" disabled={saving} onClick={() => deleteCancelled(m)}>
                       Delete
                     </button>
@@ -1822,7 +1851,10 @@
         load();
       }
 
-      const canSignOff = (m) => isAdmin || myProjectIds.has(m.to_project_id);
+      const canSignOff = () => isAdmin;
+      const canCancelMovement = (m) => isAdmin || myProjectIds.has(m.to_project_id);
+      // A project's assigned member raises movements for their own job.
+      const canRaiseFor = (projectId) => isAdmin || myProjectIds.has(projectId);
 
       // ── Rollup and analytics — active projects only ─────────────────────────
 
@@ -2065,11 +2097,24 @@
                                     : "PLANNED"}
                               </div>
                               {mv.note && <div style={{ fontSize: 12, color: "#7A7461", marginTop: 2 }}>{mv.note}</div>}
-                              {mv.status === "planned" && canSignOff(mv) && (
-                                <button className="cb-btn-approve" style={{ marginTop: 6 }} disabled={saving}
-                                  onClick={() => signOffMovement(mv)}>
-                                  {mv.from_project_id ? "Sign off — crew arrived" : "Sign off — hired"}
-                                </button>
+                              {mv.status === "planned" && (
+                                <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                                  {canSignOff() && (
+                                    <button className="cb-btn-approve" disabled={saving}
+                                      onClick={() => signOffMovement(mv)}>
+                                      {mv.from_project_id ? "Sign off — crew arrived" : "Sign off — hired"}
+                                    </button>
+                                  )}
+                                  {canCancelMovement(mv) && (
+                                    <button className="mv-mini danger" disabled={saving}
+                                      onClick={() => cancelMovement(mv)}>Cancel</button>
+                                  )}
+                                  {!canSignOff() && (
+                                    <span style={{ fontSize: 11, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace", alignSelf: "center" }}>
+                                      AWAITING SIGN-OFF
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </div>
                           ))}
@@ -2326,7 +2371,7 @@
                           </span>
                           <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             <strong>{mv.headcount}</strong>
-                            {isAdmin && (
+                            {canCancelMovement(mv) && (
                               <button onClick={() => cancelMovement(mv)} disabled={saving} style={{
                                 background: "none", border: "none", cursor: "pointer",
                                 color: "#9A3C3C", fontSize: 11, padding: 0,
@@ -2338,7 +2383,7 @@
                     </div>
                   )}
 
-                  {isAdmin && m.totalNeed > 0 && (
+                  {m.needing.some(nd => canRaiseFor(nd.id)) && (
                     <div style={{ marginTop: 10 }}>
                       <button className="cb-btn-ghost" style={{ fontSize: 12, padding: "7px 12px" }}
                         onClick={() => setRaiseGap(m)}>Action this gap</button>
@@ -2394,7 +2439,7 @@
               onCancel={() => setDeleteProject(null)} onDelete={removeProject} />
           )}
           {raiseGap && (
-            <RaiseMovementModal gap={raiseGap} saving={saving}
+            <RaiseMovementModal gap={raiseGap} canRaiseFor={canRaiseFor} saving={saving}
               onCancel={() => setRaiseGap(null)} onSubmit={raiseMovement} />
           )}
           {tradeModal}
@@ -2717,7 +2762,7 @@
             <div className="tab-strip">
               <button className={"tab-btn" + (tab === "roster" ? " active" : "")} onClick={() => setTab("roster")}>Roster</button>
               <button className={"tab-btn" + (tab === "manpower" ? " active" : "")} onClick={() => setTab("manpower")}>Manpower</button>
-              {isAdmin && <button className={"tab-btn" + (tab === "movements" ? " active" : "")} onClick={() => setTab("movements")}>Movements</button>}
+              {!isVisitor && <button className={"tab-btn" + (tab === "movements" ? " active" : "")} onClick={() => setTab("movements")}>Movements</button>}
             </div>
 
             {isAdmin && visiblePendingUsers.length > 0 && (
@@ -2887,7 +2932,7 @@
                     dataVersion={dataVersion} onRequestSubmitted={load} />
             )}
 
-            {tab === "movements" && isAdmin && (
+            {tab === "movements" && !isVisitor && (
               <MovementsBoard user={user} role={role} notify={notify} />
             )}
           </div>
