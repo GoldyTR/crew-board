@@ -129,7 +129,34 @@
       gap: 12px; cursor: pointer; flex-wrap: wrap;
     }
     .mp-card-head:hover { background: #FBF9F2; }
-    .mp-card-body { border-top: 1px solid #E3DFD1; padding: 14px 16px; }
+    .mp-card-body { border-top: 1px solid #E3DFD1; padding: 16px; background: #FAF8F0; }
+    .mp-card-head.is-open { background: #F4F1E5; }
+    .mp-section {
+      background: #FFFEFA; border: 1px solid #E8E3D4; border-radius: 4px;
+      padding: 13px 15px; margin-bottom: 12px;
+    }
+    .mp-sec-head {
+      display: flex; align-items: center; gap: 9px;
+      padding-bottom: 9px; margin-bottom: 11px; border-bottom: 1px solid #F1EEE3;
+    }
+    .mp-sec-dot { width: 3px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+    .mp-sec-title {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600;
+      letter-spacing: 0.11em; color: #5A5444;
+    }
+    .mp-sec-meta {
+      margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 10px;
+      letter-spacing: 0.05em; color: #9A9381;
+    }
+    .mp-foot {
+      display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;
+      padding-top: 13px; border-top: 1px solid #E8E3D4;
+    }
+    .mp-sec-actions {
+      display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;
+      margin-top: 12px; padding-top: 11px; border-top: 1px solid #F1EEE3;
+    }
+    .mp-empty { font-size: 12px; color: #9A9381; padding: 4px 0; }
     .mp-head-nums {
       display: flex; align-items: center; gap: 12px;
       flex-wrap: wrap; justify-content: flex-end;
@@ -144,7 +171,10 @@
     .mp-grid th:first-child { text-align: left; }
     .mp-grid td { padding: 4px 6px; border-top: 1px solid #EDE9DC; text-align: right; white-space: nowrap; }
     .mp-grid td:first-child { text-align: left; color: #5A5444; white-space: normal; }
-    .mp-grid tr.total-row td { border-top: 2px solid #D8D2BF; font-weight: 600; color: #1B2A33; }
+    .mp-grid tbody tr:hover td { background: #FBF9F2; }
+    .mp-grid th.now-col, .mp-grid td.now-col { border-right: 2px solid #E3DFD1; padding-right: 11px; }
+    .mp-grid tr.total-row td { border-top: 2px solid #C9C2AC; background: #F5F2E7; font-weight: 600; color: #1B2A33; }
+    .mp-grid tr.total-row:hover td { background: #F5F2E7; }
     .mp-num {
       font-family: 'JetBrains Mono', monospace; font-size: 13px; width: 62px;
       border: 1px solid #C9C2AC; background: #FFFEFA; color: #1B2A33;
@@ -1379,6 +1409,21 @@
       );
     }
 
+    // One panel per section of an open project card, so the eye has somewhere
+    // to land instead of a single column of thin grey rules.
+    function CardSection({ accent, title, meta, children }) {
+      return (
+        <div className="mp-section">
+          <div className="mp-sec-head">
+            <span className="mp-sec-dot" style={{ background: accent }} />
+            <span className="mp-sec-title">{title}</span>
+            {meta && <span className="mp-sec-meta">{meta}</span>}
+          </div>
+          {children}
+        </div>
+      );
+    }
+
     function ManpowerView({ user, role, fullName, notify, dataVersion, onRequestSubmitted }) {
       const isOwner = isOwnerRole(role);
       const isAdmin = isManagerRole(role);
@@ -1980,7 +2025,7 @@
 
         return (
           <div key={proj.id} className={"mp-card" + (done ? " done" : "")}>
-            <div className="mp-card-head" onClick={() => toggleExpanded(proj.id)}>
+            <div className={"mp-card-head" + (open ? " is-open" : "")} onClick={() => toggleExpanded(proj.id)}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontWeight: 600, fontSize: 15 }}>{proj.name}</span>
@@ -2007,12 +2052,14 @@
 
             {open && (
               <div className="mp-card-body">
+                <CardSection accent="#1F4E78" title="MANPOWER"
+                  meta={onProject.length ? `${onProject.length} trade${onProject.length === 1 ? "" : "s"}` : null}>
                 <div style={{ overflowX: "auto" }}>
                   <table className="mp-grid">
                     <thead>
                       <tr>
                         <th>Trade</th>
-                        {periods.map(p => <th key={p.key}>{p.short}</th>)}
+                        {periods.map(p => <th key={p.key} className={p.key === "now" ? "now-col" : undefined}>{p.short}</th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -2031,7 +2078,7 @@
                             )}
                           </td>
                           {periods.map(p => (
-                            <td key={p.key}>
+                            <td key={p.key} className={p.key === "now" ? "now-col" : undefined}>
                               <input className="mp-num" inputMode="numeric" disabled={!editable}
                                 value={valueOf(proj.id, t.id, p.key)}
                                 onChange={e => setValue(proj.id, t.id, p.key, e.target.value)}
@@ -2042,7 +2089,7 @@
                       ))}
                       <tr className="total-row">
                         <td>Total</td>
-                        {periods.map(p => <td key={p.key}><span className="mp-readonly">{totalFor(proj.id, p.key)}</span></td>)}
+                        {periods.map(p => <td key={p.key} className={p.key === "now" ? "now-col" : undefined}><span className="mp-readonly">{totalFor(proj.id, p.key)}</span></td>)}
                       </tr>
                     </tbody>
                   </table>
@@ -2058,24 +2105,21 @@
                   </div>
                 )}
 
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14, flexWrap: "wrap" }}>
-                  {isAdmin && <button className="cb-btn-danger" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setDeleteProject(proj)}>Delete</button>}
-                  {canEditDetails(proj) && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setEditProject(proj)}>Edit details</button>}
-                  {isAdmin && !done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setConfirmDone(proj)}>Mark complete</button>}
-                  {isAdmin && done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setProjectStatus(proj, "approved")}>Reopen</button>}
-                  {editable && dirty && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => clearDrafts(proj.id)}>Discard</button>}
-                  {editable && (
+                {editable && (
+                  <div className="mp-sec-actions">
+                    {dirty && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => clearDrafts(proj.id)}>Discard</button>}
                     <button className="cb-btn" style={{ fontSize: 13, padding: "9px 16px" }} disabled={!dirty || saving}
                       onClick={() => access === "request" ? submitProjectRequest(proj.id) : saveProject(proj.id)}>
                       {saving ? "Saving…" : access === "request" ? "Submit for approval" : "Save"}
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
+                </CardSection>
 
-                <div style={{ marginTop: 18, borderTop: "1px solid #EDE9DC", paddingTop: 14 }}>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>CREW MOVEMENTS</div>
+                <CardSection accent="#3E6F5C" title="CREW MOVEMENTS"
+                  meta={inbound.length || outbound.length ? `${inbound.length} in · ${outbound.length} out` : null}>
                   {inbound.length === 0 && outbound.length === 0 ? (
-                    <div style={{ fontSize: 12, color: "#9A9381", padding: "4px 0" }}>Nothing planned or recorded.</div>
+                    <div className="mp-empty">Nothing planned or recorded.</div>
                   ) : (
                     <div className="pool-cols">
                       {inbound.length > 0 && (
@@ -2139,17 +2183,14 @@
                       )}
                     </div>
                   )}
-                </div>
+                </CardSection>
 
-                <div style={{ marginTop: 18, borderTop: "1px solid #EDE9DC", paddingTop: 14 }}>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>HEADCOUNT OVER TIME</div>
+                <CardSection accent="#C9821F" title="HEADCOUNT OVER TIME">
                   <ProjectTrendChart actuals={projActuals} forecast={forecast} periods={periods} />
-                </div>
+                </CardSection>
 
-                <div style={{ marginTop: 18, borderTop: "1px solid #EDE9DC", paddingTop: 14 }}>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.08em", color: "#8A8270", marginBottom: 8 }}>
-                    COMMENTS{projComments.length > 0 ? ` (${projComments.length})` : ""}
-                  </div>
+                <CardSection accent="#7A7461" title="COMMENTS"
+                  meta={projComments.length ? String(projComments.length) : null}>
                   {canComment(proj.id) && (
                     <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 4 }}>
                       <textarea className="cb-textarea" rows={2} placeholder="Add a note…"
@@ -2161,7 +2202,7 @@
                     </div>
                   )}
                   {projComments.length === 0 ? (
-                    <div style={{ fontSize: 12, color: "#9A9381", padding: "6px 0" }}>No comments yet.</div>
+                    <div className="mp-empty">No comments yet.</div>
                   ) : projComments.map(c => (
                     <div key={c.id} className="comment">
                       <div style={{ minWidth: 0 }}>
@@ -2176,7 +2217,16 @@
                       )}
                     </div>
                   ))}
-                </div>
+                </CardSection>
+
+                {(isAdmin || canEditDetails(proj)) && (
+                  <div className="mp-foot">
+                    {isAdmin && <button className="cb-btn-danger" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setDeleteProject(proj)}>Delete</button>}
+                    {canEditDetails(proj) && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setEditProject(proj)}>Edit details</button>}
+                    {isAdmin && !done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setConfirmDone(proj)}>Mark complete</button>}
+                    {isAdmin && done && <button className="cb-btn-ghost" style={{ fontSize: 13, padding: "9px 14px" }} onClick={() => setProjectStatus(proj, "approved")}>Reopen</button>}
+                  </div>
+                )}
               </div>
             )}
           </div>
