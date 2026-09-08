@@ -157,6 +157,23 @@
       margin-top: 12px; padding-top: 11px; border-top: 1px solid #F1EEE3;
     }
     .mp-empty { font-size: 12px; color: #9A9381; padding: 4px 0; }
+    .mp-subtabs {
+      display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px;
+      border-bottom: 1px solid #E8E3D4; padding-bottom: 10px;
+    }
+    .mp-subtab {
+      font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600;
+      letter-spacing: 0.09em; padding: 6px 11px; border-radius: 3px; cursor: pointer;
+      background: transparent; border: 1px solid transparent; color: #8A8270;
+    }
+    .mp-subtab:hover { background: #F1EEE3; color: #1B2A33; }
+    .mp-subtab.on { background: #1B2A33; border-color: #1B2A33; color: #F7F4EC; }
+    .mp-subtab .n { opacity: 0.7; margin-left: 5px; }
+    .gap-line {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 7px 0; border-bottom: 1px solid #F1EEE3; font-size: 12px;
+    }
+    .gap-line:last-child { border-bottom: none; }
     .mp-head-nums {
       display: flex; align-items: center; gap: 12px;
       flex-wrap: wrap; justify-content: flex-end;
@@ -816,42 +833,98 @@
       periods.slice(1).forEach(p => points.push({ label: p.date, value: forecast[p.key] || 0, actual: false }));
 
       if (points.length < 2) {
-        return <div style={{ fontSize: 12, color: "#8A8270", padding: "6px 0" }}>
+        return <div className="mp-empty" style={{ padding: "10px 0" }}>
           Not enough history yet — the curve appears once this project has been updated on more than one day.
         </div>;
       }
 
-      const W = 720, H = 150, padL = 36, padB = 26, padT = 12, padR = 10;
+      const W = 720, H = 170, padL = 34, padB = 30, padT = 22, padR = 16;
       const plotW = W - padL - padR, plotH = H - padB - padT;
-      const max = Math.max(1, ...points.map(p => p.value));
+      // Head room above the peak so the top value is not jammed against the frame.
+      const peak = Math.max(1, ...points.map(p => p.value));
+      const max = Math.ceil(peak * 1.15 / 5) * 5 || 5;
       const xAt = i => padL + (i / (points.length - 1)) * plotW;
       const yAt = v => padT + plotH - (v / max) * plotH;
+      const base = padT + plotH;
+
       const lastActual = points.filter(p => p.actual).length - 1;
-      const solid = points.slice(0, lastActual + 1).map((p, i) => `${xAt(i)},${yAt(p.value)}`).join(" ");
       const from = Math.max(0, lastActual);
-      const dashed = points.slice(from).map((p, i) => `${xAt(i + from)},${yAt(p.value)}`).join(" ");
+      const actualPts = points.slice(0, lastActual + 1);
+      const fcPts = points.slice(from);
+
+      const line = (pts, offset) => pts.map((p, i) => `${xAt(i + offset)},${yAt(p.value)}`).join(" ");
+      const area = (pts, offset) => {
+        if (pts.length < 2) return "";
+        return `${xAt(offset)},${base} ` + line(pts, offset) + ` ${xAt(offset + pts.length - 1)},${base}`;
+      };
+
+      const shortDate = (d) => {
+        const dt = new Date(String(d).slice(0, 10) + "T00:00:00");
+        return dt.toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+      };
+      const last = points[points.length - 1];
 
       return (
         <div style={{ overflowX: "auto" }}>
           <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 420, height: "auto", display: "block" }}>
+            <defs>
+              <linearGradient id="cbActual" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#1F4E78" stopOpacity="0.18" />
+                <stop offset="100%" stopColor="#1F4E78" stopOpacity="0.02" />
+              </linearGradient>
+              <linearGradient id="cbFc" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#C9821F" stopOpacity="0.14" />
+                <stop offset="100%" stopColor="#C9821F" stopOpacity="0.02" />
+              </linearGradient>
+            </defs>
+
             {[0, 0.5, 1].map(f => {
               const y = padT + plotH - f * plotH;
               return (
                 <g key={f}>
                   <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#EDE9DC" strokeWidth="1" />
-                  <text x={padL - 6} y={y + 4} textAnchor="end" fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">{Math.round(max * f)}</text>
+                  <text x={padL - 7} y={y + 3.5} textAnchor="end" fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">
+                    {Math.round(max * f)}
+                  </text>
                 </g>
               );
             })}
-            {lastActual >= 1 && <polyline points={solid} fill="none" stroke="#1F4E78" strokeWidth="2" />}
-            <polyline points={dashed} fill="none" stroke="#C9821F" strokeWidth="2" strokeDasharray="5 4" />
-            {points.map((p, i) => <circle key={i} cx={xAt(i)} cy={yAt(p.value)} r="3" fill={p.actual ? "#1F4E78" : "#C9821F"} />)}
-            <text x={padL} y={H - 8} fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">{points[0].label}</text>
-            <text x={W - padR} y={H - 8} textAnchor="end" fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">{points[points.length - 1].label}</text>
+
+            {actualPts.length > 1 && <polygon points={area(actualPts, 0)} fill="url(#cbActual)" />}
+            {fcPts.length > 1 && <polygon points={area(fcPts, from)} fill="url(#cbFc)" />}
+
+            {/* Where recorded fact ends and prediction begins. */}
+            {lastActual >= 0 && lastActual < points.length - 1 && (
+              <g>
+                <line x1={xAt(lastActual)} y1={padT - 6} x2={xAt(lastActual)} y2={base}
+                  stroke="#C9C2AC" strokeWidth="1" strokeDasharray="3 3" />
+                <text x={xAt(lastActual) + 5} y={padT - 9} fontSize="8.5" fill="#9A9381"
+                  fontFamily="'JetBrains Mono', monospace" letterSpacing="0.08em">TODAY</text>
+              </g>
+            )}
+
+            {actualPts.length > 1 && <polyline points={line(actualPts, 0)} fill="none" stroke="#1F4E78" strokeWidth="2.25" strokeLinejoin="round" strokeLinecap="round" />}
+            {fcPts.length > 1 && <polyline points={line(fcPts, from)} fill="none" stroke="#C9821F" strokeWidth="2.25" strokeDasharray="6 4" strokeLinejoin="round" strokeLinecap="round" />}
+
+            {points.map((p, i) => {
+              const edge = i === 0 || i === lastActual || i === points.length - 1;
+              if (!edge) return null;
+              return <circle key={i} cx={xAt(i)} cy={yAt(p.value)} r="3.5"
+                fill="#FFFEFA" stroke={p.actual ? "#1F4E78" : "#C9821F"} strokeWidth="2" />;
+            })}
+
+            {/* Final forecast value, called out rather than left to be read off the axis. */}
+            <text x={xAt(points.length - 1)} y={yAt(last.value) - 10} textAnchor="end"
+              fontSize="12" fontWeight="600" fill="#A4621A" fontFamily="'JetBrains Mono', monospace">
+              {last.value}
+            </text>
+
+            <text x={padL} y={H - 9} fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">{shortDate(points[0].label)}</text>
+            <text x={W - padR} y={H - 9} textAnchor="end" fontSize="9" fill="#9A9381" fontFamily="'JetBrains Mono', monospace">{shortDate(last.label)}</text>
           </svg>
-          <div style={{ display: "flex", gap: 14, fontSize: 11, color: "#5A5444", marginTop: 2 }}>
-            <span><span style={{ display: "inline-block", width: 14, height: 2, background: "#1F4E78", verticalAlign: "middle", marginRight: 5 }} />Actual</span>
-            <span><span style={{ display: "inline-block", width: 14, height: 2, background: "#C9821F", verticalAlign: "middle", marginRight: 5 }} />Forecast</span>
+          <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#5A5444", marginTop: 4 }}>
+            <span><span style={{ display: "inline-block", width: 16, height: 2.5, background: "#1F4E78", verticalAlign: "middle", marginRight: 6, borderRadius: 2 }} />On site</span>
+            <span><span style={{ display: "inline-block", width: 16, height: 2.5, background: "#C9821F", verticalAlign: "middle", marginRight: 6, borderRadius: 2 }} />Forecast</span>
           </div>
         </div>
       );
@@ -1440,6 +1513,7 @@
       const [members, setMembers] = useState([]);
       const [loading, setLoading] = useState(true);
       const [expanded, setExpanded] = useState(null);
+      const [cardTab, setCardTab] = useState("manpower");
       const [autoExpanded, setAutoExpanded] = useState(false);
       const [showDone, setShowDone] = useState(false);
       const [drafts, setDrafts] = useState({});
@@ -1526,6 +1600,7 @@
 
       // Accordion: opening a project collapses whichever one was open.
       function toggleExpanded(id) {
+        setCardTab("manpower");
         setExpanded(cur => (cur === id ? null : id));
       }
 
@@ -2004,6 +2079,14 @@
         </div>
       );
 
+      // The same gaps the analysis found, narrowed to one project — so a PM can
+      // act on their own shortfall without leaving the project card. The pool of
+      // crew coming available is unchanged: surplus anywhere is fair game.
+      const projectGaps = useCallback((projectId) => moves
+        .filter(m => m.needing.some(n => n.id === projectId))
+        .map(m => Object.assign({}, m, { needing: m.needing.filter(n => n.id === projectId) })),
+        [moves]);
+
       // ── Project card ────────────────────────────────────────────────────────
 
       function renderProject(proj) {
@@ -2019,6 +2102,7 @@
         const onProject = tradesOn(proj.id);
         const available = trades.filter(t => onProject.every(x => x.id !== t.id));
         const projComments = comments.filter(c => c.project_id === proj.id);
+        const gaps = done ? [] : projectGaps(proj.id);
         const inbound = movements.filter(m => m.to_project_id === proj.id && m.status !== "cancelled");
         const outbound = movements.filter(m => m.from_project_id === proj.id && m.status !== "cancelled");
         const headPeriods = periods;
@@ -2052,6 +2136,21 @@
 
             {open && (
               <div className="mp-card-body">
+                <div className="mp-subtabs">
+                  {[
+                    { id: "manpower", label: "MANPOWER" },
+                    { id: "movements", label: "MOVEMENTS", n: inbound.length + outbound.length },
+                    { id: "trend", label: "TREND" },
+                    { id: "comments", label: "COMMENTS", n: projComments.length },
+                  ].map(t => (
+                    <button key={t.id} className={"mp-subtab" + (cardTab === t.id ? " on" : "")}
+                      onClick={() => setCardTab(t.id)}>
+                      {t.label}{t.n ? <span className="n">{t.n}</span> : null}
+                    </button>
+                  ))}
+                </div>
+
+                {cardTab === "manpower" && (
                 <CardSection accent="#1F4E78" title="MANPOWER"
                   meta={onProject.length ? `${onProject.length} trade${onProject.length === 1 ? "" : "s"}` : null}>
                 <div style={{ overflowX: "auto" }}>
@@ -2115,7 +2214,27 @@
                   </div>
                 )}
                 </CardSection>
+                )}
 
+                {cardTab === "manpower" && gaps.length > 0 && (
+                  <CardSection accent="#9A3C3C" title="OPEN GAPS" meta={`${gaps.length}`}>
+                    {gaps.map((g, i) => (
+                      <div key={i} className="gap-line">
+                        <span>
+                          <strong>{g.needing[0].count}</strong> {g.trade.name.toLowerCase()} by {g.period.label.toLowerCase()}
+                          {g.totalRel > 0
+                            ? <span style={{ color: "#3E6F5C" }}> · {g.totalRel} coming available</span>
+                            : <span style={{ color: "#A4621A" }}> · nothing releasing</span>}
+                        </span>
+                        {canRaiseFor(proj.id) && (
+                          <button className="mv-mini" onClick={() => setRaiseGap(g)}>Action</button>
+                        )}
+                      </div>
+                    ))}
+                  </CardSection>
+                )}
+
+                {cardTab === "movements" && (
                 <CardSection accent="#3E6F5C" title="CREW MOVEMENTS"
                   meta={inbound.length || outbound.length ? `${inbound.length} in · ${outbound.length} out` : null}>
                   {inbound.length === 0 && outbound.length === 0 ? (
@@ -2184,11 +2303,15 @@
                     </div>
                   )}
                 </CardSection>
+                )}
 
+                {cardTab === "trend" && (
                 <CardSection accent="#C9821F" title="HEADCOUNT OVER TIME">
                   <ProjectTrendChart actuals={projActuals} forecast={forecast} periods={periods} />
                 </CardSection>
+                )}
 
+                {cardTab === "comments" && (
                 <CardSection accent="#7A7461" title="COMMENTS"
                   meta={projComments.length ? String(projComments.length) : null}>
                   {canComment(proj.id) && (
@@ -2218,6 +2341,7 @@
                     </div>
                   ))}
                 </CardSection>
+                )}
 
                 {(isAdmin || canEditDetails(proj)) && (
                   <div className="mp-foot">
