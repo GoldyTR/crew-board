@@ -2762,7 +2762,7 @@
             <div className="tab-strip">
               <button className={"tab-btn" + (tab === "roster" ? " active" : "")} onClick={() => setTab("roster")}>Roster</button>
               <button className={"tab-btn" + (tab === "manpower" ? " active" : "")} onClick={() => setTab("manpower")}>Manpower</button>
-              {!isVisitor && <button className={"tab-btn" + (tab === "movements" ? " active" : "")} onClick={() => setTab("movements")}>Movements</button>}
+              {isAdmin && <button className={"tab-btn" + (tab === "movements" ? " active" : "")} onClick={() => setTab("movements")}>Movements</button>}
             </div>
 
             {isAdmin && visiblePendingUsers.length > 0 && (
@@ -2932,7 +2932,7 @@
                     dataVersion={dataVersion} onRequestSubmitted={load} />
             )}
 
-            {tab === "movements" && !isVisitor && (
+            {tab === "movements" && isAdmin && (
               <MovementsBoard user={user} role={role} notify={notify} />
             )}
           </div>
