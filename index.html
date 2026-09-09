@@ -174,34 +174,37 @@
       padding: 7px 0; border-bottom: 1px solid #F1EEE3; font-size: 12px;
     }
     .gap-line:last-child { border-bottom: none; }
-    .proj-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
-    @media (min-width: 560px) { .proj-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (min-width: 880px) { .proj-grid { grid-template-columns: repeat(3, 1fr); } }
+    .proj-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    @media (min-width: 520px) { .proj-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (min-width: 760px) { .proj-grid { grid-template-columns: repeat(4, 1fr); } }
+    @media (min-width: 1000px) { .proj-grid { grid-template-columns: repeat(5, 1fr); } }
     .proj-tile {
-      background: #FFFEFA; border: 1px solid #D8D2BF; border-left: 4px solid #1F4E78;
-      border-radius: 4px; padding: 14px 15px; cursor: pointer; text-align: left;
-      display: flex; flex-direction: column; gap: 11px; min-height: 158px;
+      background: #FFFEFA; border: 1px solid #D8D2BF; border-left: 3px solid #1F4E78;
+      border-radius: 3px; padding: 10px 11px; cursor: pointer; text-align: left;
+      display: flex; flex-direction: column; gap: 7px; min-height: 116px;
       font-family: 'Inter', sans-serif;
     }
     .proj-tile:hover { background: #FBF9F2; border-color: #C9C2AC; }
     .proj-tile.done { border-left-color: #9A9381; opacity: 0.85; }
     .proj-tile.has-gap { border-left-color: #9A3C3C; }
     .proj-name {
-      font-weight: 600; font-size: 14px; color: #1B2A33; line-height: 1.35;
+      font-weight: 600; font-size: 12px; color: #1B2A33; line-height: 1.3;
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     }
     .proj-now {
-      font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 600;
+      font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 600;
       color: #1B2A33; line-height: 1;
     }
-    .proj-fc { display: flex; gap: 14px; margin-top: 2px; }
-    .proj-fc div { text-align: left; }
-    .proj-fc .v { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #5A5444; }
-    .proj-fc .k { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #9A9381; letter-spacing: 0.05em; }
+    .proj-fc { display: flex; gap: 10px; }
+    .proj-fc .v { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #5A5444; }
+    .proj-fc .k { font-family: 'JetBrains Mono', monospace; font-size: 8px; color: #9A9381; letter-spacing: 0.04em; }
     .proj-meta {
-      margin-top: auto; font-family: 'JetBrains Mono', monospace; font-size: 10px;
-      letter-spacing: 0.05em; color: #9A9381;
-      display: flex; justify-content: space-between; gap: 8px; align-items: center;
+      margin-top: auto; font-family: 'JetBrains Mono', monospace; font-size: 9px;
+      letter-spacing: 0.04em; color: #9A9381;
+    }
+    .proj-chip {
+      font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 0.05em;
+      border-radius: 2px; padding: 1px 5px; border: 1px solid;
     }
     .back-link {
       background: none; border: none; cursor: pointer; padding: 0 0 12px;
@@ -2172,34 +2175,33 @@
         return (
           <button key={proj.id} className={"proj-tile" + (done ? " done" : gapCount > 0 ? " has-gap" : "")}
             onClick={() => { setCardTab("manpower"); setExpanded(proj.id); }}>
-            <div>
-              <div className="proj-name">{proj.name}</div>
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 5 }}>
-                {done && <span className="status-chip" style={{ color: "#5A5444", background: "#EDE9DC", borderColor: "#C9C2AC" }}>COMPLETE</span>}
-                {!done && myProjectIds.has(proj.id) && !isAdmin && <span className="status-chip" style={{ color: "#1F4E78", background: "#E1E9F0", borderColor: "#2E6394" }}>YOURS</span>}
-                {gapCount > 0 && <span className="status-chip" style={{ color: "#9A3C3C", background: "#F6E8E8", borderColor: "#C98787" }}>{gapCount} GAP{gapCount === 1 ? "" : "S"}</span>}
+            <div className="proj-name">{proj.name}</div>
+
+            {(done || gapCount > 0 || (!isAdmin && myProjectIds.has(proj.id))) && (
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {done && <span className="proj-chip" style={{ color: "#5A5444", background: "#EDE9DC", borderColor: "#C9C2AC" }}>DONE</span>}
+                {!done && myProjectIds.has(proj.id) && !isAdmin && <span className="proj-chip" style={{ color: "#1F4E78", background: "#E1E9F0", borderColor: "#2E6394" }}>YOURS</span>}
+                {gapCount > 0 && <span className="proj-chip" style={{ color: "#9A3C3C", background: "#F6E8E8", borderColor: "#C98787" }}>{gapCount} GAP{gapCount === 1 ? "" : "S"}</span>}
+              </div>
+            )}
+
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
+              <div>
+                <div className="proj-now">{totalFor(proj.id, "now")}</div>
+                <div className="k" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: "#9A9381", letterSpacing: "0.05em", marginTop: 3 }}>NOW</div>
+              </div>
+              <div className="proj-fc">
+                {next.map(p => (
+                  <div key={p.key}>
+                    <div className="v">{totalFor(proj.id, p.key)}</div>
+                    <div className="k">{p.short.split(" ")[0]}</div>
+                  </div>
+                ))}
               </div>
             </div>
 
-            <div>
-              <div className="proj-now">{totalFor(proj.id, "now")}</div>
-              <div style={{ fontSize: 10, color: "#9A9381", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.06em", marginTop: 2 }}>ON SITE NOW</div>
-            </div>
-
-            <div className="proj-fc">
-              {next.map(p => (
-                <div key={p.key}>
-                  <div className="v">{totalFor(proj.id, p.key)}</div>
-                  <div className="k">{p.short}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="proj-meta">
-              <span style={{ color: stale ? "#9A3C3C" : "#9A9381" }}>
-                {staleDays === null ? "NEVER UPDATED" : staleDays === 0 ? "UPDATED TODAY" : `${staleDays}D AGO`}
-              </span>
-              <span>›</span>
+            <div className="proj-meta" style={{ color: stale ? "#9A3C3C" : "#9A9381" }}>
+              {staleDays === null ? "NEVER UPDATED" : staleDays === 0 ? "TODAY" : `${staleDays}D AGO`}
             </div>
           </button>
         );
