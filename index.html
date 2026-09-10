@@ -619,7 +619,7 @@
       const [form, setForm] = useState(person ? { ...blank, ...person } : blank);
       const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-      // Projects are chosen by id, so a rename carries through instead of
+      // Current project is chosen by id, so a rename carries through instead of
       // orphaning the crew member. The text column follows the id.
       function setProject(field, textField, value) {
         const id = value === "" ? null : parseInt(value, 10);
@@ -629,6 +629,21 @@
           [textField]: proj ? proj.name : "",
         }));
       }
+
+      // Next project accepts anything, because it is often a job that has not
+      // been awarded yet and so cannot exist on the board. Typing a name that
+      // does match links it by id; anything else is kept as plain text.
+      const normed = (t) => (t || "").toLowerCase().replace(/\s+/g, " ").trim();
+      function setNextProject(text) {
+        const hit = projects.find(p => normed(p.name) === normed(text));
+        setForm(f => Object.assign({}, f, {
+          next_project: text,
+          next_project_id: hit ? hit.id : null,
+        }));
+      }
+      const nextLinked = form.next_project_id
+        ? projects.find(p => p.id === form.next_project_id)
+        : null;
 
       const legacy = (id, text) => !id && text && text.toLowerCase() !== "unassigned";
 
@@ -661,17 +676,22 @@
             </div>
             <div>
               <Field label="Next project">
-                <select className="cb-input" value={form.next_project_id || ""}
-                  onChange={e => setProject("next_project_id", "next_project", e.target.value)}>
-                  <option value="">—</option>
-                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                <input className="cb-input" list="cb-project-names" value={form.next_project || ""}
+                  onChange={e => setNextProject(e.target.value)}
+                  placeholder="Pick from the board, or type a job not yet awarded" />
               </Field>
-              {legacy(form.next_project_id, form.next_project) && (
-                <div style={{ fontSize: 11, color: "#A4621A", marginTop: 5, lineHeight: 1.4 }}>
-                  Recorded as “{form.next_project}”, which is not a project on the board.
+              <datalist id="cb-project-names">
+                {projects.map(p => <option key={p.id} value={p.name} />)}
+              </datalist>
+              {nextLinked ? (
+                <div style={{ fontSize: 11, color: "#3E6F5C", marginTop: 5 }}>
+                  Linked to {nextLinked.name} — follows any rename.
                 </div>
-              )}
+              ) : form.next_project ? (
+                <div style={{ fontSize: 11, color: "#7A7461", marginTop: 5, lineHeight: 1.4 }}>
+                  Not a project on the board. Kept as written — link it once the job is added.
+                </div>
+              ) : null}
             </div>
             <div className="form-row-2">
               <Field label="Vacation start"><input className="cb-input" type="date" value={form.vacation_start || ""} onChange={set("vacation_start")} /></Field>
