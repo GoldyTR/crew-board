@@ -614,10 +614,24 @@
     }
 
     // ── Person Form ───────────────────────────────────────────────────────────
-    function PersonForm({ person, onCancel, onSave, saving, isViewer }) {
-      const blank = { name: "", position: "", trade: "", current_project: "", project_end: "", next_project: "", vacation_start: "", vacation_end: "", comments: "" };
+    function PersonForm({ person, projects, onCancel, onSave, saving, isViewer }) {
+      const blank = { name: "", position: "", trade: "", current_project: "", project_id: null, project_end: "", next_project: "", next_project_id: null, vacation_start: "", vacation_end: "", comments: "" };
       const [form, setForm] = useState(person ? { ...blank, ...person } : blank);
       const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+      // Projects are chosen by id, so a rename carries through instead of
+      // orphaning the crew member. The text column follows the id.
+      function setProject(field, textField, value) {
+        const id = value === "" ? null : parseInt(value, 10);
+        const proj = projects.find(p => p.id === id);
+        setForm(f => Object.assign({}, f, {
+          [field]: id,
+          [textField]: proj ? proj.name : "",
+        }));
+      }
+
+      const legacy = (id, text) => !id && text && text.toLowerCase() !== "unassigned";
+
       return (
         <div className="modal-box">
           <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 18, textTransform: "uppercase", marginBottom: 18, borderBottom: "1px solid #E3DFD1", paddingBottom: 12 }}>
@@ -629,10 +643,36 @@
             <Field label="Position / Role"><input className="cb-input" value={form.position || ""} onChange={set("position")} placeholder="e.g. Lead Pipefitter, Superintendent" /></Field>
             <Field label="Trade"><input className="cb-input" value={form.trade || ""} onChange={set("trade")} placeholder="e.g. Scaffolding, Insulation" /></Field>
             <div className="form-row-2">
-              <Field label="Current project"><input className="cb-input" value={form.current_project || ""} onChange={set("current_project")} placeholder="e.g. Dry Creek WTP" /></Field>
+              <div>
+                <Field label="Current project">
+                  <select className="cb-input" value={form.project_id || ""}
+                    onChange={e => setProject("project_id", "current_project", e.target.value)}>
+                    <option value="">Unassigned</option>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </Field>
+                {legacy(form.project_id, form.current_project) && (
+                  <div style={{ fontSize: 11, color: "#A4621A", marginTop: 5, lineHeight: 1.4 }}>
+                    Recorded as “{form.current_project}”, which is not a project on the board. Pick one to link it.
+                  </div>
+                )}
+              </div>
               <Field label="Project end date"><input className="cb-input" type="date" value={form.project_end || ""} onChange={set("project_end")} /></Field>
             </div>
-            <Field label="Next project"><input className="cb-input" value={form.next_project || ""} onChange={set("next_project")} placeholder="e.g. LNG Canada, or TBD" /></Field>
+            <div>
+              <Field label="Next project">
+                <select className="cb-input" value={form.next_project_id || ""}
+                  onChange={e => setProject("next_project_id", "next_project", e.target.value)}>
+                  <option value="">—</option>
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </Field>
+              {legacy(form.next_project_id, form.next_project) && (
+                <div style={{ fontSize: 11, color: "#A4621A", marginTop: 5, lineHeight: 1.4 }}>
+                  Recorded as “{form.next_project}”, which is not a project on the board.
+                </div>
+              )}
+            </div>
             <div className="form-row-2">
               <Field label="Vacation start"><input className="cb-input" type="date" value={form.vacation_start || ""} onChange={set("vacation_start")} /></Field>
               <Field label="Vacation end"><input className="cb-input" type="date" value={form.vacation_end || ""} onChange={set("vacation_end")} /></Field>
@@ -1633,7 +1673,7 @@
       );
     }
 
-    function ManpowerView({ user, role, fullName, notify, dataVersion, onRequestSubmitted }) {
+    function ManpowerView({ user, role, fullName, notify, dataVersion, roster, onEditPerson, onRequestSubmitted }) {
       const isOwner = isOwnerRole(role);
       const isAdmin = isManagerRole(role);
 
@@ -2321,6 +2361,7 @@
         const available = selectableTrades.filter(t => onProject.every(x => x.id !== t.id));
         const projComments = comments.filter(c => c.project_id === proj.id);
         const gaps = done ? [] : projectGaps(proj.id);
+        const crew = (roster || []).filter(r => r.project_id === proj.id);
         const inbound = movements.filter(m => m.to_project_id === proj.id && m.status !== "cancelled");
         const outbound = movements.filter(m => m.from_project_id === proj.id && m.status !== "cancelled");
         const headPeriods = periods;
@@ -2357,6 +2398,7 @@
                 <div className="mp-subtabs">
                   {[
                     { id: "manpower", label: "MANPOWER" },
+                    { id: "crew", label: "CREW", n: crew.length },
                     { id: "movements", label: "MOVEMENTS", n: inbound.length + outbound.length },
                     { id: "trend", label: "TREND" },
                     { id: "comments", label: "COMMENTS", n: projComments.length },
@@ -2449,6 +2491,39 @@
                         )}
                       </div>
                     ))}
+                  </CardSection>
+                )}
+
+                {cardTab === "crew" && (
+                  <CardSection accent="#2E6394" title="KEY PERSONNEL" meta={crew.length ? String(crew.length) : null}>
+                    {crew.length === 0 ? (
+                      <div className="mp-empty">
+                        Nobody on the roster is assigned to this project.
+                      </div>
+                    ) : crew.map(pn => {
+                      const st = STATUS_META[deriveStatus(pn)];
+                      return (
+                        <div key={pn.id} className="gap-line">
+                          <span style={{ minWidth: 0 }}>
+                            <strong>{pn.name}</strong>
+                            <span style={{ transform: "rotate(-2deg)", display: "inline-block", marginLeft: 8, border: `1.5px solid ${st.border}`, color: st.color, fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 9, letterSpacing: "0.07em", padding: "1px 6px", borderRadius: 3, background: st.bg }}>{st.stamp}</span>
+                            <span style={{ display: "block", fontSize: 11, color: "#6B6354", marginTop: 2 }}>
+                              {[pn.position, pn.trade].filter(Boolean).join(" · ") || "—"}
+                              {pn.project_end ? ` · to ${fmt(pn.project_end)}` : ""}
+                              {pn.next_project ? ` · next: ${pn.next_project}` : ""}
+                            </span>
+                            {pn.vacation_start && pn.vacation_end && (
+                              <span style={{ display: "block", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#7A3B3B", marginTop: 2 }}>
+                                VACATION {fmt(pn.vacation_start)} – {fmt(pn.vacation_end)}
+                              </span>
+                            )}
+                          </span>
+                          <button className="mv-mini" onClick={() => onEditPerson(pn)}>
+                            {isAdmin ? "Edit" : "Request edit"}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </CardSection>
                 )}
 
@@ -2957,6 +3032,7 @@
       const [tab, setTab] = useState("roster");
       const [fullName, setFullName] = useState("");
       const [roster, setRoster] = useState([]);
+      const [projectList, setProjectList] = useState([]);
       const [requests, setRequests] = useState([]);
       const [pendingUsers, setPendingUsers] = useState([]);
       const [allUsers, setAllUsers] = useState([]);
@@ -2982,6 +3058,11 @@
         // Visitors read roster_public — every member column except next_project.
         const { data } = await sb.from(isVisitor ? "roster_public" : "roster").select("*").order("name");
         setRoster(data || []);
+        if (!isVisitor) {
+          const { data: projs } = await sb.from("projects").select("id, name")
+            .eq("status", "approved").order("name");
+          setProjectList(projs || []);
+        }
         if (!fullName) {
           const { data: ur } = await sb.from("user_roles").select("full_name").eq("user_id", user.id).single();
           if (ur?.full_name) setFullName(ur.full_name);
@@ -3039,7 +3120,7 @@
 
       async function editorSave(form) {
         setSaving(true);
-        const payload = { name: form.name, position: form.position || null, trade: form.trade || null, current_project: form.current_project || null, project_end: form.project_end || null, next_project: form.next_project || null, vacation_start: form.vacation_start || null, vacation_end: form.vacation_end || null, comments: form.comments || null };
+        const payload = { name: form.name, position: form.position || null, trade: form.trade || null, current_project: form.current_project || null, project_id: form.project_id || null, project_end: form.project_end || null, next_project: form.next_project || null, next_project_id: form.next_project_id || null, vacation_start: form.vacation_start || null, vacation_end: form.vacation_end || null, comments: form.comments || null };
         let error;
         if (form.id) ({ error } = await sb.from("roster").update(payload).eq("id", form.id));
         else ({ error } = await sb.from("roster").insert(payload));
@@ -3179,7 +3260,7 @@
         } else if (kind === "manpower") {
           error = await writeManpowerRows(payload.project_id, payload);
         } else {
-          const data = { name: payload.name, position: payload.position || null, trade: payload.trade || null, current_project: payload.current_project || null, project_end: payload.project_end || null, next_project: payload.next_project || null, vacation_start: payload.vacation_start || null, vacation_end: payload.vacation_end || null, comments: payload.comments || null };
+          const data = { name: payload.name, position: payload.position || null, trade: payload.trade || null, current_project: payload.current_project || null, project_id: payload.project_id || null, project_end: payload.project_end || null, next_project: payload.next_project || null, next_project_id: payload.next_project_id || null, vacation_start: payload.vacation_start || null, vacation_end: payload.vacation_end || null, comments: payload.comments || null };
           if (req.action === "add") ({ error } = await sb.from("roster").insert(data));
           else if (req.action === "edit") {
             if (!req.roster_id) { notify("Approve failed — no roster ID", "error"); return; }
@@ -3416,7 +3497,8 @@
               isVisitor
                 ? <VisitorManpower />
                 : <ManpowerView user={user} role={role} fullName={fullName} notify={notify}
-                    dataVersion={dataVersion} onRequestSubmitted={load} />
+                    dataVersion={dataVersion} roster={roster} onEditPerson={p => setEditing(p)}
+                    onRequestSubmitted={load} />
             )}
 
             {tab === "movements" && isAdmin && (
@@ -3451,7 +3533,7 @@
 
           {editing !== null && (
             <div className="modal-overlay" onClick={e => e.target === e.currentTarget && !saving && setEditing(null)}>
-              <PersonForm person={editing} onCancel={() => setEditing(null)} onSave={form => isEditor ? editorSave(form) : viewerRequest(form, form.id ? "edit" : "add")} saving={saving} isViewer={!isEditor} />
+              <PersonForm person={editing} projects={projectList} onCancel={() => setEditing(null)} onSave={form => isEditor ? editorSave(form) : viewerRequest(form, form.id ? "edit" : "add")} saving={saving} isViewer={!isEditor} />
             </div>
           )}
 
