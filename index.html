@@ -983,7 +983,7 @@
           const [tRes, sRes, gRes] = await Promise.all([
             sb.from("trades").select("id, name").in("status", ["approved", "archived"]).order("name"),
             sb.from("manpower_summary").select("*"),
-            sb.from("gap_summary").select("*"),
+            sb.from("gap_detail").select("*"),
           ]);
           if (cancelled) return;
           setTrades(tRes.data || []);
@@ -1005,21 +1005,37 @@
       const activeTrades = trades.filter(t => periods.some(p => at(t.id, p.key) > 0));
       const series = activeTrades.map(t => ({ name: t.name, values: periods.map(p => at(t.id, p.key)) }));
 
-      // Ordered the way the periods run, so the list reads forward in time.
+      // One card per trade and period, with the projects on each side — the
+      // same shape everyone else sees. Grouped here rather than in the view so
+      // the lists stay ordered the way the periods run.
       const gapCards = useMemo(() => {
         const order = {};
         periods.forEach((p, i) => { order[p.key] = i; });
-        return gaps.map(g => {
+        const byKey = {};
+        gaps.forEach(g => {
           const key = g.period_date ? String(g.period_date).slice(0, 10) : "now";
-          const p = periods.find(x => x.key === key);
           const t = trades.find(x => x.id === g.trade_id);
-          return {
-            needed: g.needed, available: g.available,
-            tradeName: t ? t.name : "—",
-            label: p ? p.label : key,
-            idx: order[key] === undefined ? 99 : order[key],
-          };
-        }).sort((a, b) => a.idx - b.idx || a.tradeName.localeCompare(b.tradeName));
+          const id = g.trade_id + "|" + key;
+          if (!byKey[id]) {
+            const p = periods.find(x => x.key === key);
+            byKey[id] = {
+              tradeName: t ? t.name : "—",
+              label: p ? p.label : key,
+              idx: order[key] === undefined ? 99 : order[key],
+              releasing: [], needing: [], available: 0, needed: 0,
+            };
+          }
+          const card = byKey[id];
+          if (g.available > 0) { card.releasing.push({ name: g.project_name, count: g.available }); card.available += g.available; }
+          if (g.needed > 0)    { card.needing.push({ name: g.project_name, count: g.needed });    card.needed += g.needed; }
+        });
+        return Object.keys(byKey).map(k => byKey[k])
+          .map(c => {
+            c.releasing.sort((a, b) => b.count - a.count);
+            c.needing.sort((a, b) => b.count - a.count);
+            return c;
+          })
+          .sort((a, b) => a.idx - b.idx || a.tradeName.localeCompare(b.tradeName));
       }, [gaps, trades, periods]);
 
       if (loading) return (
@@ -1091,8 +1107,32 @@
             const pure = g.needed === 0 && surplus > 0;
             return (
               <div key={i} className={"move-card" + (hire > 0 ? " hire" : pure ? " avail" : "")}>
-                <div style={{ fontWeight: 600 }}>{g.tradeName} — {g.label}</div>
-                <div style={{ fontSize: 12, color: "#5A5444", marginTop: 6, lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>{g.tradeName} — {g.label}</div>
+
+                <div className="pool-cols">
+                  {g.releasing.length > 0 && (
+                    <div>
+                      <div className="pool-head">AVAILABLE — {g.available}</div>
+                      {g.releasing.map((r, j) => (
+                        <div key={j} className="pool-line" style={{ color: "#3E6F5C" }}>
+                          {r.name} <strong>{r.count}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {g.needing.length > 0 && (
+                    <div>
+                      <div className="pool-head">NEEDED — {g.needed}</div>
+                      {g.needing.map((r, j) => (
+                        <div key={j} className="pool-line" style={{ color: "#A4621A" }}>
+                          {r.name} <strong>{r.count}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ fontSize: 12, color: "#5A5444", marginTop: 8, lineHeight: 1.5 }}>
                   {pure ? (
                     <strong style={{ color: "#1F4E78" }}>
                       {g.available} {g.tradeName.toLowerCase()} coming available — nothing needs them this period.
