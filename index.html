@@ -973,19 +973,22 @@
     function VisitorManpower() {
       const [trades, setTrades] = useState([]);
       const [summary, setSummary] = useState([]);
+      const [gaps, setGaps] = useState([]);
       const [loading, setLoading] = useState(true);
       const periods = useMemo(() => computePeriods(), []);
 
       useEffect(() => {
         let cancelled = false;
         (async () => {
-          const [tRes, sRes] = await Promise.all([
+          const [tRes, sRes, gRes] = await Promise.all([
             sb.from("trades").select("id, name").in("status", ["approved", "archived"]).order("name"),
             sb.from("manpower_summary").select("*"),
+            sb.from("gap_summary").select("*"),
           ]);
           if (cancelled) return;
           setTrades(tRes.data || []);
           setSummary(sRes.data || []);
+          setGaps(gRes.data || []);
           setLoading(false);
         })();
         return () => { cancelled = true; };
@@ -1001,6 +1004,23 @@
       const totals = periods.map(p => at(null, p.key));
       const activeTrades = trades.filter(t => periods.some(p => at(t.id, p.key) > 0));
       const series = activeTrades.map(t => ({ name: t.name, values: periods.map(p => at(t.id, p.key)) }));
+
+      // Ordered the way the periods run, so the list reads forward in time.
+      const gapCards = useMemo(() => {
+        const order = {};
+        periods.forEach((p, i) => { order[p.key] = i; });
+        return gaps.map(g => {
+          const key = g.period_date ? String(g.period_date).slice(0, 10) : "now";
+          const p = periods.find(x => x.key === key);
+          const t = trades.find(x => x.id === g.trade_id);
+          return {
+            needed: g.needed, available: g.available,
+            tradeName: t ? t.name : "—",
+            label: p ? p.label : key,
+            idx: order[key] === undefined ? 99 : order[key],
+          };
+        }).sort((a, b) => a.idx - b.idx || a.tradeName.localeCompare(b.tradeName));
+      }, [gaps, trades, periods]);
 
       if (loading) return (
         <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 48, textAlign: "center", color: "#8A8270", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>Loading manpower…</div>
@@ -1024,7 +1044,7 @@
             </div>
           </div>
 
-          <div style={{ overflowX: "auto", border: "1px solid #D8D2BF", borderRadius: 3 }}>
+          <div style={{ overflowX: "auto", border: "1px solid #D8D2BF", borderRadius: 3, marginBottom: 24 }}>
             <table className="roll-table">
               <thead>
                 <tr>
@@ -1057,6 +1077,44 @@
               </tbody>
             </table>
           </div>
+
+          {/* Company-level gaps. Computed per project in the database and only
+              then aggregated, so no project is identifiable here. */}
+          <div className="section-title">Moves &amp; Gaps</div>
+          {gapCards.length === 0 ? (
+            <div style={{ border: "1px dashed #C9C2AC", borderRadius: 4, padding: 28, textAlign: "center", color: "#8A8270", fontSize: 13 }}>
+              Nothing moving across the forecast.
+            </div>
+          ) : gapCards.map((g, i) => {
+            const hire = Math.max(0, g.needed - g.available);
+            const surplus = Math.max(0, g.available - g.needed);
+            const pure = g.needed === 0 && surplus > 0;
+            return (
+              <div key={i} className={"move-card" + (hire > 0 ? " hire" : pure ? " avail" : "")}>
+                <div style={{ fontWeight: 600 }}>{g.tradeName} — {g.label}</div>
+                <div style={{ fontSize: 12, color: "#5A5444", marginTop: 6, lineHeight: 1.5 }}>
+                  {pure ? (
+                    <strong style={{ color: "#1F4E78" }}>
+                      {g.available} {g.tradeName.toLowerCase()} coming available — nothing needs them this period.
+                    </strong>
+                  ) : g.available === 0 ? (
+                    <strong style={{ color: "#A4621A" }}>Nothing releasing — {g.needed} to hire.</strong>
+                  ) : hire > 0 ? (
+                    <React.Fragment>
+                      <strong style={{ color: "#3E6F5C" }}>{g.available} coming available</strong> against{" "}
+                      <strong>{g.needed} needed</strong>.{" "}
+                      <strong style={{ color: "#A4621A" }}>Hire {hire}.</strong>
+                    </React.Fragment>
+                  ) : (
+                    <React.Fragment>
+                      <strong style={{ color: "#3E6F5C" }}>{g.needed} can be covered</strong> from the {g.available} coming available.
+                      {surplus > 0 && <span> <strong style={{ color: "#1F4E78" }}>{surplus} spare.</strong></span>}
+                    </React.Fragment>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       );
     }
